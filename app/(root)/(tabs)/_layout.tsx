@@ -3,23 +3,92 @@ import { Image, Platform, View, TouchableOpacity, Text } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { icons } from "@/constants";
 import { router } from "expo-router";
+import * as DocumentPicker from "expo-document-picker";
+import { useContext } from "react";
+import { DocumentContext, DocItem } from "../../../context/DocumentContext";
+
+const ALLOWED_EXTS = ["pdf", "doc", "docx", "ppt", "pptx", "xls", "xlsx", "csv"];
 
 // Define type for iconsMap to fix index signature error
 interface IconsMap {
-  [key: string]: any; // Replace 'any' with a more specific type if you have icon types
+  [key: string]: any;
   home: any;
-  notes: any;
+  askai: any;
   upload: any;
   profile: any;
   chat: any;
 }
 
 export default function Layout() {
+  const { setDocuments } = useContext(DocumentContext)!;
+
+  const getExt = (filename: string) => {
+    if (!filename) return "";
+    const parts = filename.split(".");
+    return parts.length > 1 ? parts[parts.length - 1].toLowerCase() : "";
+  };
+
+  const inferSourceFromUri = (uri: string) => {
+    if (!uri) return "My phone";
+    const lower = uri.toLowerCase();
+    if (lower.includes("whatsapp")) return "WhatsApp";
+    if (lower.includes("download") || lower.includes("downloads")) return "Download";
+    if (lower.includes("drive")) return "Drive";
+    return "My phone";
+  };
+
+  const handleUpload = async () => {
+    try {
+      const res = await DocumentPicker.getDocumentAsync({
+        type: "*/*",
+        copyToCacheDirectory: true,
+      });
+
+      if (res.canceled) {
+        router.navigate("/(root)/(tabs)/home");
+        return;
+      }
+
+      const { name, uri } = res.assets[0];
+      const ext = getExt(name);
+
+      if (!ALLOWED_EXTS.includes(ext)) {
+        router.navigate({
+          pathname: "/(root)/(tabs)/upload",
+          params: { errorMsg: `File type ".${ext}" is not supported. Only PDF, Word, Excel, and PowerPoint files are allowed.` },
+        });
+        return;
+      }
+
+      const id = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+      const uploadedAt = Date.now();
+      const source = inferSourceFromUri(uri || "");
+
+      const newDoc: DocItem = {
+        id,
+        name,
+        uri,
+        ext,
+        source,
+        uploadedAt,
+        favorite: false,
+      };
+
+      setDocuments((prev: DocItem[]) => [newDoc, ...prev]);
+      router.navigate("/(root)/(tabs)/home");
+    } catch (err) {
+      router.navigate({
+        pathname: "/(root)/(tabs)/upload",
+        params: { errorMsg: "Could not pick document. Please try again." },
+      });
+    }
+  };
+
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: "#2563EB",
+        tabBarActiveTintColor: "#22C55E",
         tabBarInactiveTintColor: "#9CA3AF",
         tabBarStyle: {
           backgroundColor: Platform.OS === "ios" ? "rgba(255, 255, 255, 0.3)" : "rgba(255, 255, 255, 0.9)",
@@ -53,9 +122,13 @@ export default function Layout() {
         },
       }}
       tabBar={({ state, descriptors, navigation }) => {
+        if (state.index === 1 || state.index === 4) {
+          return null;
+        }
+
         const iconsMap: IconsMap = {
           home: icons.home,
-          notes: icons.list,
+          askai: icons.list,
           upload: icons.plus,
           profile: icons.profile,
           chat: icons.chat,
@@ -96,7 +169,11 @@ export default function Layout() {
                 });
 
                 if (!isFocused && !event.defaultPrevented) {
-                  navigation.navigate(route.name);
+                  if (route.name === "upload") {
+                    handleUpload();
+                  } else {
+                    navigation.navigate(route.name);
+                  }
                 }
               };
 
@@ -104,7 +181,7 @@ export default function Layout() {
                 return (
                   <TouchableOpacity
                     key={route.key}
-                    onPress={() => router.push("/(root)/(tabs)/upload")}
+                    onPress={handleUpload}
                     style={{
                       justifyContent: "center",
                       alignItems: "center",
@@ -113,17 +190,17 @@ export default function Layout() {
                       marginHorizontal: 8,
                     }}
                   >
-                   <LinearGradient
-  colors={["#EF4444", "#EC4899", "#8B5CF6", "#3B82F6"]} // red → pink → purple → blue
-  start={{ x: 0, y: 0 }}
-  end={{ x: 1, y: 0 }}
-  style={{
-    borderRadius: 30,
-    padding: 3,
-    justifyContent: "center",
-    alignItems: "center",
-  }}
->
+                    <LinearGradient
+                      colors={["#EF4444", "#EC4899", "#8B5CF6", "#3B82F6"]}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 0 }}
+                      style={{
+                        borderRadius: 30,
+                        padding: 2,
+                        justifyContent: "center",
+                        alignItems: "center",
+                      }}
+                    >
                       <View
                         style={{
                           backgroundColor: "white",
@@ -139,7 +216,7 @@ export default function Layout() {
                           style={{
                             width: 30,
                             height: 30,
-                            tintColor: "#2563EB",
+                            tintColor: "#22C55E",
                           }}
                         />
                       </View>
@@ -164,7 +241,7 @@ export default function Layout() {
                     style={{
                       width: 24,
                       height: 24,
-                      tintColor: isFocused ? "#2563EB" : "#9CA3AF",
+                      tintColor: isFocused ? "#22C55E" : "#9CA3AF",
                     }}
                   />
                   <Text
@@ -172,7 +249,7 @@ export default function Layout() {
                       fontSize: 12,
                       fontWeight: "500",
                       marginTop: 2,
-                      color: isFocused ? "#2563EB" : "#9CA3AF",
+                      color: isFocused ? "#22C55E" : "#9CA3AF",
                     }}
                   >
                     {options.title}
@@ -185,7 +262,7 @@ export default function Layout() {
       }}
     >
       <Tabs.Screen name="home" options={{ title: "Home" }} />
-      <Tabs.Screen name="notes" options={{ title: "Notes" }} />
+      <Tabs.Screen name="askai" options={{ title: "AskAI" }} />
       <Tabs.Screen
         name="upload"
         options={{

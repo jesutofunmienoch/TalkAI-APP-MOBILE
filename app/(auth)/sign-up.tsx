@@ -3,6 +3,8 @@ import { Link, router } from "expo-router";
 import { useState } from "react";
 import { Alert, Image, ScrollView, Text, View } from "react-native";
 import { ReactNativeModal } from "react-native-modal";
+import { LinearGradient } from "expo-linear-gradient";
+
 
 import CustomButton from "@/components/CustomButton";
 import InputField from "@/components/InputField";
@@ -84,7 +86,17 @@ const SignUp = () => {
     <ScrollView className="flex-1 bg-white">
       <View className="flex-1 bg-white">
         <View className="relative w-full h-[250px]">
-          <Image source={images.signUpCar} className="z-0 w-full h-[250px]" />
+          <Image source={images.signin} className="z-0 w-full h-[250px]" />
+           <LinearGradient
+    colors={["transparent", "white"]}  // top transparent, bottom white
+    style={{
+      position: "absolute",
+      bottom: 0,
+      left: 0,
+      right: 0,
+      height: 120, // adjust height of fade
+    }}
+  />
           <Text className="text-2xl text-black font-JakartaSemiBold absolute bottom-5 left-5">
             Create Your Account
           </Text>

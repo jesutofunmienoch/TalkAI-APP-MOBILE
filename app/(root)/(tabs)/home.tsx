@@ -1,156 +1,531 @@
 import { useUser, useAuth } from "@clerk/clerk-expo";
 import { router } from "expo-router";
-import { useState, useEffect } from "react";
-import { Text, View, TouchableOpacity, Image, TextInput, ScrollView } from "react-native";
+import React, { useState, useRef, useEffect, useContext } from "react";
+import {
+  Text,
+  View,
+  TouchableOpacity,
+  Image,
+  TextInput,
+  ScrollView,
+  Dimensions,
+  FlatList,
+  Animated,
+  StyleSheet,
+  Modal,
+  Switch,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { LinearGradient } from "expo-linear-gradient";
+import LottieView from "lottie-react-native";
+import * as DocumentPicker from "expo-document-picker";
+import { Ionicons, MaterialIcons, Feather } from "@expo/vector-icons";
 import { icons } from "@/constants";
+import { DocumentContext, DocItem } from "../../../context/DocumentContext";
+
+const { width } = Dimensions.get("window");
+
+const ICONS = {
+  pdf: require("../../../assets/images/pdf.png"),
+  word: require("../../../assets/images/word.png"),
+  excel: require("../../../assets/images/excel.png"),
+  ppt: require("../../../assets/images/ppt.png"),
+  generic: require("../../../assets/images/no-document.png"),
+};
+
+const ALLOWED_EXTS = ["pdf", "doc", "docx", "ppt", "pptx", "xls", "xlsx", "csv"];
+
+const useDocumentContext = () => {
+  const context = useContext(DocumentContext);
+  if (!context) {
+    throw new Error("useDocumentContext must be used within a DocumentContext.Provider");
+  }
+  return context;
+};
 
 const Home = () => {
   const { user, isLoaded } = useUser();
   const { signOut } = useAuth();
-  const [searchQuery, setSearchQuery] = useState("");
+  const { documents, setDocuments } = useDocumentContext();
 
-  // Debug user data
+  const [searchQuery, setSearchQuery] = useState("");
+  const [menuVisible, setMenuVisible] = useState(false);
+  const [selectedDoc, setSelectedDoc] = useState<DocItem | null>(null);
+  const [errorMsg, setErrorMsg] = useState("");
+  const errorAnim = useRef(new Animated.Value(-100)).current;
+
+  const headerLottie = require("../../../assets/images/learning.json");
+  const noDataLottie = require("../../../assets/images/No-Data.json");
+
   useEffect(() => {
-    if (isLoaded && user) {
-      console.log("User data:", JSON.stringify(user, null, 2));
+    if (errorMsg) {
+      Animated.timing(errorAnim, {
+        toValue: 0,
+        duration: 300,
+        useNativeDriver: true,
+      }).start();
+    } else {
+      Animated.timing(errorAnim, {
+        toValue: -100,
+        duration: 300,
+        useNativeDriver: true,
+      }).start();
     }
-  }, [isLoaded, user]);
+  }, [errorMsg]);
+
+  const getExt = (filename: string) => {
+    if (!filename) return "";
+    const parts = filename.split(".");
+    return parts.length > 1 ? parts[parts.length - 1].toLowerCase() : "";
+  };
+
+  const mapExtToIcon = (ext: string) => {
+    if (["pdf"].includes(ext)) return ICONS.pdf;
+    if (["doc", "docx"].includes(ext)) return ICONS.word;
+    if (["xls", "xlsx", "csv"].includes(ext)) return ICONS.excel;
+    if (["ppt", "pptx"].includes(ext)) return ICONS.ppt;
+    return ICONS.generic;
+  };
+
+  const inferSourceFromUri = (uri: string) => {
+    if (!uri) return "My phone";
+    const lower = uri.toLowerCase();
+    if (lower.includes("whatsapp")) return "WhatsApp";
+    if (lower.includes("download") || lower.includes("downloads")) return "Download";
+    if (lower.includes("drive")) return "Drive";
+    return "My phone";
+  };
+
+  const formatRelativeTime = (timestamp: number) => {
+    const now = Date.now();
+    const diff = Math.floor((now - timestamp) / 1000);
+    if (diff < 60) return `${diff}s ago`;
+    if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+    if (diff < 604800) return `${Math.floor(diff / 86400)}d ago`;
+    return new Date(timestamp).toLocaleDateString();
+  };
+
+  const handlePickDocument = async () => {
+    try {
+      const res = await DocumentPicker.getDocumentAsync({
+        type: "*/*",
+        copyToCacheDirectory: true,
+      });
+
+      if (res.canceled) return;
+
+      const { name, uri } = res.assets[0];
+      const ext = getExt(name);
+
+      if (!ALLOWED_EXTS.includes(ext)) {
+        setErrorMsg(`File type ".${ext}" is not supported. Only PDF, Word, Excel, and PowerPoint files are allowed.`);
+        return;
+      }
+
+      const id = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+      const uploadedAt = Date.now();
+      const source = inferSourceFromUri(uri || "");
+
+      const newDoc: DocItem = {
+        id,
+        name,
+        uri,
+        ext,
+        source,
+        uploadedAt,
+        favorite: false,
+      };
+
+      setDocuments((prev: DocItem[]) => [newDoc, ...prev]);
+    } catch (err) {
+      setErrorMsg("Could not pick document. Please try again.");
+    }
+  };
+
+  const toggleFavorite = (doc: DocItem, value: boolean) => {
+    setDocuments((prev: DocItem[]) =>
+      prev.map((d: DocItem) => (d.id === doc.id ? { ...d, favorite: value } : d))
+    );
+  };
+
+  const handleOpenMenu = (doc: DocItem) => {
+    setSelectedDoc(doc);
+    setMenuVisible(true);
+  };
 
   const handleSignOut = async () => {
     try {
       await signOut();
       router.replace("/(auth)/sign-in");
-    } catch (err) {
-      console.error("Sign out error:", err);
+    } catch {
       alert("Error signing out. Please try again.");
-    }
-  };
-
-  const handleSearch = () => {
-    if (searchQuery.trim()) {
-      alert(`Searching for: ${searchQuery}`);
-    } else {
-      alert("Please enter a destination");
     }
   };
 
   if (!isLoaded) {
     return (
-      <SafeAreaView className="bg-[#f8fafc] flex-1">
-        <View className="flex-1 justify-center items-center">
-          <Text className="text-gray-600">Loading user data...</Text>
+      <SafeAreaView style={styles.safe}>
+        <View style={styles.loadingBox}>
+          <Text style={{ color: "#374151" }}>Loading user data...</Text>
         </View>
       </SafeAreaView>
     );
   }
 
-  // Function to capitalize the first letter
-  const capitalizeFirstLetter = (string: string) => {
-    if (!string) return "";
-    return string.charAt(0).toUpperCase() + string.slice(1);
-  };
+  const displayName = user?.firstName ? user.firstName : "User";
 
-  // Only use firstName if available, capitalized; fallback to "User"
-  // Note: If it's showing "User", check the console log for user.firstName. It might be null if not set in Clerk. Enable first/last name in Clerk dashboard under User & Authentication > User attributes.
-  const displayName = user?.firstName ? capitalizeFirstLetter(user.firstName) : "User";
+  const filteredFavorites = documents.filter((d: DocItem) =>
+    d.favorite && d.name.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+  const filteredNonFavorites = documents.filter((d: DocItem) =>
+    !d.favorite && d.name.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   return (
-    <SafeAreaView className="bg-[#f8fafc] flex-1">
-      <ScrollView className="flex-1">
-        <View className="mx-5 mt-8">
-          <View className="flex-row items-center justify-between mb-6">
-            <View>
-              <Text className="text-3xl font-bold text-gray-900">
-                Welcome, {displayName} 👋
-              </Text>
-              <Text className="text-base text-gray-600">
-                Ready to explore today?
-              </Text>
-            </View>
-            <TouchableOpacity
-              onPress={handleSignOut}
-              className="w-12 h-12 mb-4 rounded-lg bg-white shadow-md justify-center items-center"
-            >
-              <Image source={icons.out} className="w-5 h-5" />
-            </TouchableOpacity>
+    <SafeAreaView style={styles.safe}>
+      <ScrollView showsVerticalScrollIndicator={false}>
+        {/* Header */}
+        <View style={styles.header}>
+          <LottieView source={headerLottie} autoPlay loop style={{ width, height: 250 }} />
+          <LinearGradient colors={["transparent", "#f8fafc"]} style={styles.gradient} />
+          <View style={styles.headerTextWrap}>
+            <Text style={styles.welcome}>Welcome, {displayName}</Text>
+            <Text style={styles.sub}>Ready to explore talkai?</Text>
           </View>
+          <TouchableOpacity onPress={handleSignOut} style={styles.logoutBtn}>
+            <Image source={icons.out} style={styles.logoutIcon} />
+            <Text style={styles.logoutText}>Logout</Text>
+          </TouchableOpacity>
+        </View>
 
-          <View className="mb-8">
-            <View className="bg-white rounded-full shadow-md px-4 py-3 flex-row items-center">
-              <Image source={icons.search} className="w-5 h-5 mr-3" />
-              <TextInput
-                placeholder="Enter your destination"
-                value={searchQuery}
-                onChangeText={setSearchQuery}
-                className="flex-1 text-base"
-                placeholderTextColor="#9CA3AF"
-              />
-            </View>
-            <TouchableOpacity
-              onPress={handleSearch}
-              className="bg-blue-600 px-6 py-3 rounded-full mt-4 mx-auto w-2/3"
-            >
-              <Text className="text-white text-lg font-semibold text-center">
-                Find Ride
-              </Text>
-            </TouchableOpacity>
-          </View>
-
-          <View className="mb-8">
-            <Text className="text-2xl font-bold text-gray-900 mb-4">
-              Suggested Destinations
-            </Text>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              className="flex-row"
-            >
-              {[
-                { name: "Downtown", icon: icons.map },
-                { name: "Airport", icon: icons.map },
-                { name: "Beachfront", icon: icons.map },
-              ].map((destination, index) => (
-                <TouchableOpacity
-                  key={index}
-                  onPress={() => alert(`Selected: ${destination.name}`)}
-                  className="bg-white rounded-xl shadow-md p-4 mr-4 w-40"
-                >
-                  <View className="items-center">
-                    <View className="w-12 h-12 bg-blue-100 rounded-full items-center justify-center mb-3">
-                      <Image source={destination.icon} className="w-6 h-6" />
-                    </View>
-                    <Text className="text-gray-800 font-medium text-center">
-                      {destination.name}
-                    </Text>
-                  </View>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          </View>
-
-          <View className="mb-8">
-            <Text className="text-2xl font-bold text-gray-900 mb-4">
-              Why Choose Us?
-            </Text>
-            <View className="bg-white rounded-xl shadow-md p-6">
-              <Text className="text-gray-600 text-base leading-6 mb-4">
-                Enjoy fast, reliable rides with our trusted drivers. Book in seconds and track your journey in real-time.
-              </Text>
-              <TouchableOpacity
-                onPress={() => router.push("/(root)/(tabs)/profile")}
-                className="bg-blue-100 px-4 py-2 rounded-full w-1/2 mx-auto"
-              >
-                <Text className="text-blue-600 text-base font-semibold text-center">
-                  Learn More
-                </Text>
-              </TouchableOpacity>
-            </View>
+        {/* Search */}
+        <View style={[styles.container, { marginTop: -40 }]}>
+          <View style={styles.searchBox}>
+            <Image source={icons.search} style={styles.searchIcon} />
+            <TextInput
+              placeholder="Search document"
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              style={styles.searchInput}
+              placeholderTextColor="#9CA3AF"
+            />
           </View>
         </View>
+
+        {/* Uploaded Documents */}
+        <View style={[styles.container, { marginTop: 18 }]}>
+          <Text style={styles.sectionTitle}>Uploaded documents</Text>
+
+          {documents.length === 0 ? (
+            <View style={styles.emptyCard}>
+              <LottieView source={noDataLottie} autoPlay loop style={{ width: 120, height: 120 }} />
+              <Text style={styles.emptyTitle}>No documents yet</Text>
+              <Text style={styles.emptySubtitle}>
+                Start keeping track of your documents by uploading your first one
+              </Text>
+              <TouchableOpacity onPress={handlePickDocument} style={styles.uploadBtn}>
+                <Ionicons name="cloud-upload-outline" size={18} color="#fff" />
+                <Text style={styles.uploadBtnText}>Upload a Document</Text>
+              </TouchableOpacity>
+            </View>
+          ) : filteredFavorites.length === 0 && filteredNonFavorites.length === 0 ? (
+            <View style={styles.emptyCard}>
+              <LottieView source={noDataLottie} autoPlay loop style={{ width: 120, height: 120 }} />
+              <Text style={styles.emptyTitle}>No documents found</Text>
+              <Text style={styles.emptySubtitle}>
+                File named "{searchQuery}" not found. Try a different search term.
+              </Text>
+            </View>
+          ) : (
+            <>
+              <FlatList
+                data={filteredNonFavorites}
+                keyExtractor={(item: DocItem) => item.id}
+                renderItem={({ item }: { item: DocItem }) => {
+                  const icon = mapExtToIcon(item.ext);
+                  return (
+                    <View style={styles.fileRow}>
+                      <Image source={icon} style={styles.fileIcon} />
+                      <View style={styles.fileInfo}>
+                        <Text style={styles.fileName} numberOfLines={1}>{item.name}</Text>
+                        <View style={styles.fileMetaRow}>
+                          <Text style={styles.fileSource}>{item.source}</Text>
+                          <Text style={styles.fileDot}> · </Text>
+                          <Text style={styles.fileTime}>{formatRelativeTime(item.uploadedAt)}</Text>
+                        </View>
+                      </View>
+                      <TouchableOpacity onPress={() => handleOpenMenu(item)} style={styles.menuBtn}>
+                        <Ionicons name="ellipsis-vertical" size={20} color="#6b7280" />
+                      </TouchableOpacity>
+                    </View>
+                  );
+                }}
+                ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
+              />
+
+              {filteredFavorites.length > 0 && (
+                <View style={{ marginTop: 24 }}>
+                  <Text style={styles.sectionTitle}>Favorites</Text>
+                  {filteredFavorites.map((item: DocItem) => (
+                    <View key={item.id} style={styles.fileRow}>
+                      <Image source={mapExtToIcon(item.ext)} style={styles.fileIcon} />
+                      <View style={styles.fileInfo}>
+                        <Text style={styles.fileName} numberOfLines={1}>{item.name}</Text>
+                        <View style={styles.fileMetaRow}>
+                          <Text style={styles.fileSource}>{item.source}</Text>
+                          <Text style={styles.fileDot}> · </Text>
+                          <Text style={styles.fileTime}>{formatRelativeTime(item.uploadedAt)}</Text>
+                        </View>
+                      </View>
+                      <TouchableOpacity onPress={() => handleOpenMenu(item)} style={styles.menuBtn}>
+                        <Ionicons name="ellipsis-vertical" size={20} color="#6b7280" />
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                </View>
+              )}
+            </>
+          )}
+        </View>
       </ScrollView>
+
+      {errorMsg !== "" && (
+        <Animated.View style={[styles.errorBox, { transform: [{ translateY: errorAnim }] }]}>
+          <View style={styles.errorContent}>
+            <LottieView
+              source={noDataLottie}
+              autoPlay
+              loop
+              style={{ width: 60, height: 60, marginRight: 12 }}
+            />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.errorTitle}>Error</Text>
+              <Text style={styles.errorText}>{errorMsg}</Text>
+            </View>
+            <TouchableOpacity onPress={() => setErrorMsg("")} style={styles.errorCloseBtn}>
+              <Ionicons name="close" size={18} color="white" />
+            </TouchableOpacity>
+          </View>
+        </Animated.View>
+      )}
+
+      <Modal visible={menuVisible} animationType="slide" transparent>
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setMenuVisible(false)}
+        >
+          <View style={styles.modalContent}>
+            {selectedDoc && (
+              <View style={styles.modalHeader}>
+                <Image source={mapExtToIcon(selectedDoc.ext)} style={styles.fileIcon} />
+                <View style={styles.fileInfo}>
+                  <Text style={styles.fileName} numberOfLines={1}>{selectedDoc.name}</Text>
+                  <View style={styles.fileMetaRow}>
+                    <Text style={styles.fileSource}>{selectedDoc.source}</Text>
+                    <Text style={styles.fileDot}> · </Text>
+                    <Text style={styles.fileTime}>{formatRelativeTime(selectedDoc.uploadedAt)}</Text>
+                  </View>
+                </View>
+              </View>
+            )}
+            <View style={styles.menuOption}>
+              <MaterialIcons name="picture-as-pdf" size={20} color="#374151" />
+              <Text style={styles.menuText}>Convert to PDF</Text>
+            </View>
+            <View style={styles.menuOption}>
+              <Feather name="share-2" size={20} color="#374151" />
+              <Text style={styles.menuText}>Share</Text>
+            </View>
+            <View style={styles.menuOption}>
+              <Ionicons name="star-outline" size={20} color="#374151" />
+              <Text style={styles.menuText}>Favorite</Text>
+              <Switch
+                value={selectedDoc?.favorite}
+                onValueChange={(value) => {
+                  if (selectedDoc) {
+                    toggleFavorite(selectedDoc, value);
+                  }
+                }}
+                trackColor={{ false: "#d1d5db", true: "#16a34a" }}
+                thumbColor="white"
+                style={{ marginLeft: "auto" }}
+              />
+            </View>
+            <View style={styles.menuOption}>
+              <Ionicons name="cloud-upload-outline" size={20} color="#374151" />
+              <Text style={styles.menuText}>Upload to Cloud</Text>
+            </View>
+            <View style={styles.menuOption}>
+              <Ionicons name="create-outline" size={20} color="#374151" />
+              <Text style={styles.menuText}>Rename</Text>
+            </View>
+            <View style={styles.menuOption}>
+              <Ionicons name="remove-circle-outline" size={20} color="#374151" />
+              <Text style={styles.menuText}>Remove from List</Text>
+            </View>
+            <View style={styles.menuOption}>
+              <Ionicons name="trash-outline" size={20} color="red" />
+              <Text style={[styles.menuText, { color: "red" }]}>Delete</Text>
+            </View>
+            <View style={styles.menuOption}>
+              <Ionicons name="information-circle-outline" size={20} color="#374151" />
+              <Text style={styles.menuText}>Properties</Text>
+            </View>
+            <TouchableOpacity onPress={() => setMenuVisible(false)} style={styles.closeMenuBtn}>
+              <Text style={{ color: "white", fontWeight: "700" }}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </SafeAreaView>
   );
 };
 
 export default Home;
+
+const styles = StyleSheet.create({
+  safe: { flex: 1, backgroundColor: "#f8fafc" },
+  container: { paddingHorizontal: 20 },
+  header: { position: "relative", width: "100%", height: 250, backgroundColor: "#f8fafc" },
+  gradient: { position: "absolute", bottom: 0, left: 0, right: 0, height: 180 },
+  headerTextWrap: { position: "absolute", bottom: 48, left: 20 },
+  welcome: { fontSize: 26, fontWeight: "700", color: "#111827" },
+  sub: { fontSize: 14, color: "#374151", marginTop: 4 },
+  logoutBtn: {
+    position: "absolute",
+    top: 18,
+    right: 18,
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(156,163,175,0.15)",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 12,
+  },
+  logoutIcon: { width: 18, height: 18, marginRight: 8, tintColor: "#111827" },
+  logoutText: { color: "#111827", fontWeight: "600" },
+  searchBox: {
+    backgroundColor: "#fff",
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    elevation: 2,
+  },
+  searchIcon: { width: 18, height: 18, marginRight: 10, tintColor: "#9CA3AF" },
+  searchInput: { flex: 1, fontSize: 16, color: "#111827" },
+  sectionTitle: { fontSize: 15, fontWeight: "700", color: "#111827", marginBottom: 10 },
+  emptyCard: {
+    backgroundColor: "#fff",
+    borderRadius: 16,
+    padding: 20,
+    alignItems: "center",
+    justifyContent: "center",
+    elevation: 2,
+  },
+  emptyTitle: { fontSize: 18, fontWeight: "700", color: "#111827", marginTop: 6 },
+  emptySubtitle: { fontSize: 14, color: "#6B7280", textAlign: "center", marginTop: 6, marginBottom: 12 },
+  uploadBtn: {
+    marginTop: 10,
+    backgroundColor: "#16A34A",
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 999,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  uploadBtnText: { color: "#fff", fontWeight: "700", marginLeft: 8 },
+  fileRow: {
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    padding: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    elevation: 1,
+  },
+  fileIcon: { width: 44, height: 44, resizeMode: "contain", marginRight: 12 },
+  fileInfo: { flex: 1 },
+  fileName: { fontSize: 15, fontWeight: "600", color: "#111827" },
+  fileMetaRow: { flexDirection: "row", alignItems: "center", marginTop: 4 },
+  fileSource: { color: "#6B7280", fontSize: 13 },
+  fileDot: { color: "#6B7280", fontSize: 13 },
+  fileTime: { color: "#6B7280", fontSize: 13 },
+  menuBtn: { paddingHorizontal: 8, paddingVertical: 6 },
+  errorBox: {
+    position: "absolute",
+    top: 0,
+    left: 20,
+    right: 20,
+    backgroundColor: "#dc2626",
+    borderRadius: 10,
+    shadowColor: "#000",
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  errorContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 12,
+  },
+  errorTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "white",
+  },
+  errorText: {
+    fontSize: 14,
+    color: "white",
+    marginTop: 4,
+  },
+  errorCloseBtn: {
+    padding: 8,
+  },
+  modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "flex-end" },
+  modalContent: {
+    backgroundColor: "white",
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: 20,
+    paddingBottom: 40,
+  },
+  modalHeader: {
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    padding: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    elevation: 1,
+    marginBottom: 20,
+  },
+  menuOption: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 16,
+    paddingHorizontal: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: "#f3f4f6",
+    height: 56,
+  },
+  menuText: {
+    fontSize: 16,
+    color: "#374151",
+    marginLeft: 12,
+  },
+  closeMenuBtn: {
+    backgroundColor: "#16A34A",
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 999,
+    alignItems: "center",
+    marginTop: 20,
+  },
+  loadingBox: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+});

@@ -29,17 +29,17 @@ import check from "@/assets/images/check.png";
 import getStarted from "@/assets/images/get-started.png";
 import message from "@/assets/images/message.png";
 import noResult from "@/assets/images/no-result.png";
-import onboarding1 from "@/assets/images/onboarding1.png";
-import onboarding2 from "@/assets/images/onboarding2.png";
-import onboarding3 from "@/assets/images/onboarding3.png";
-import signUpCar from "@/assets/images/signup-car.png";
+import welcome from "@/assets/images/welcome.jpg";
+import welcome2 from "@/assets/images/welcome2.jpg";
+import welcome3 from "@/assets/images/welcome3.jpg";
+import signin from "@/assets/images/signin.jpg";
 
 export const images = {
-  onboarding1,
-  onboarding2,
-  onboarding3,
+  welcome,
+  welcome2,
+  welcome3,
   getStarted,
-  signUpCar,
+  signin,
   check,
   noResult,
   message,
@@ -81,21 +81,21 @@ export const onboarding = [
     title: "Your AI Reader & Assistant",
     description:
       "Upload any note, report, or document, and let me read it to you naturally.",
-    image: images.onboarding1,
+    image: images.welcome,
   },
   {
     id: 2,
     title: "Summaries in Seconds",
     description:
       "Get instant summaries, key insights, and explanations in simple words.",
-    image: images.onboarding2,
+    image: images.welcome2,
   },
   {
     id: 3,
     title: "Voice Commands & Playback",
     description:
       "Control with your voice, listen at your pace, and focus on what matters.",
-    image: images.onboarding3,
+    image: images.welcome3,
   },
 ];
 
