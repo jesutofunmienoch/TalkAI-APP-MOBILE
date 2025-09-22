@@ -1,6 +1,5 @@
-import { Client, Databases, Storage, ID, Permission, Role } from "react-native-appwrite";
+import { Client, Databases, Storage, ID, Permission, Role, InputFile } from "react-native-appwrite";
 import * as DocumentPicker from "expo-document-picker";
-import { readAsStringAsync } from "expo-file-system/legacy";
 import { router } from "expo-router";
 import { DocItem } from "../context/DocumentContext";
 
@@ -51,17 +50,13 @@ export const uploadDocument = async (
       return;
     }
 
-    // React Native descriptor object accepted by Appwrite RN SDK
-    const fileToUpload = {
-      uri,
-      name,
-      type: mimeType || `application/${ext}`,
-    } as any;
+    // Build Appwrite InputFile from URI for React Native
+    const inputFile = InputFile.fromUri(uri, name);
 
     const file = await storage.createFile(
       appwriteConfig.bucketId,
       ID.unique(),
-      fileToUpload,
+      inputFile,
       [
         Permission.read(Role.users()),
         Permission.write(Role.users()),

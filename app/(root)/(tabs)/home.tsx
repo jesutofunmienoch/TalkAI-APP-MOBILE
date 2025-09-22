@@ -16,15 +16,13 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import LottieView from "lottie-react-native";
-import * as DocumentPicker from "expo-document-picker";
 import { Ionicons, MaterialIcons, Feather } from "@expo/vector-icons";
 import { icons } from "@/constants";
 import { DocumentContext, DocItem } from "../../../context/DocumentContext";
-import { databases, storage, appwriteConfig, setJWT } from "../../../lib/appwrite";
-import { ID, Permission, Role } from "react-native-appwrite";
+import { databases, storage, appwriteConfig, setJWT, uploadDocument } from "../../../lib/appwrite";
 import { useUser, useAuth } from "@clerk/clerk-expo";
 import { router } from "expo-router";
-import { readAsStringAsync } from "expo-file-system/legacy"; // Correct import
+ 
 
 const { width } = Dimensions.get("window");
 
@@ -35,8 +33,6 @@ const ICONS = {
   ppt: require("../../../assets/images/ppt.png"),
   generic: require("../../../assets/images/no-document.png"),
 };
-
-const ALLOWED_EXTS = ["pdf", "doc", "docx", "ppt", "pptx", "xls", "xlsx", "csv"];
 
 const Home = () => {
   const { user, isLoaded } = useUser();
@@ -68,12 +64,6 @@ const Home = () => {
     }
   }, [errorMsg]);
 
-  const getExt = (filename: string) => {
-    if (!filename) return "";
-    const parts = filename.split(".");
-    return parts.length > 1 ? parts[parts.length - 1].toLowerCase() : "";
-  };
-
   const mapExtToIcon = (ext: string) => {
     if (["pdf"].includes(ext)) return ICONS.pdf;
     if (["doc", "docx"].includes(ext)) return ICONS.word;
@@ -102,80 +92,15 @@ const Home = () => {
   };
 
   const handlePickDocument = async () => {
-    try {
-      const jwt = await getToken();
-      if (jwt) setJWT(jwt);
-
-      const res = await DocumentPicker.getDocumentAsync({
-        type: "*/*",
-        copyToCacheDirectory: true,
-      });
-
-      if (res.canceled) return;
-
-      const { name, uri, mimeType } = res.assets[0];
-      const ext = getExt(name);
-
-      if (!ALLOWED_EXTS.includes(ext)) {
-        setErrorMsg(`File type ".${ext}" is not supported. Only PDF, Word, Excel, and PowerPoint files are allowed.`);
+    await uploadDocument(
+      getToken,
+      user,
+      setDocuments,
+      (msg: string) => {
+        setErrorMsg(msg);
         setTimeout(() => setErrorMsg(""), 2000);
-        return;
       }
-
-      // React Native descriptor object accepted by Appwrite RN SDK
-      const fileToUpload = {
-        uri,
-        name,
-        type: mimeType || `application/${ext}`,
-      } as any;
-
-      const uploaded = await storage.createFile(
-        appwriteConfig.bucketId,
-        ID.unique(),
-        fileToUpload,
-        [
-          Permission.read(Role.users()),
-          Permission.write(Role.users()),
-          Permission.delete(Role.users()),
-        ]
-      );
-
-      if (!uploaded || !uploaded.$id) {
-        throw new Error("Upload failed: no file id returned");
-      }
-
-      const id = ID.unique();
-      const uploadedAt = Date.now();
-      const source = inferSourceFromUri(uri || "");
-      const newDoc: DocItem = {
-        id,
-        name,
-        ext,
-        source,
-        uploadedAt,
-        favorite: false,
-        fileId: uploaded.$id,
-        userId: user?.id || "anonymous",
-      };
-
-      await databases.createDocument(
-        appwriteConfig.databaseId,
-        appwriteConfig.collectionId,
-        id,
-        newDoc,
-        [
-          Permission.read(Role.users()),
-          Permission.write(Role.users()),
-          Permission.delete(Role.users()),
-        ]
-      );
-
-      setDocuments((prev: DocItem[]) => [newDoc, ...prev]);
-    } catch (err) {
-      console.error(err);
-      setErrorMsg("Could not upload document. Please try again.");
-      setTimeout(() => setErrorMsg(""), 2000);
-    }
+    );
   };
 
   const toggleFavorite = async (doc: DocItem, value: boolean) => {
