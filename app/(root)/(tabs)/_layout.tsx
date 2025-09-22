@@ -3,16 +3,11 @@ import { Image, Platform, View, TouchableOpacity, Text } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { icons } from "@/constants";
 import { router } from "expo-router";
-import * as DocumentPicker from "expo-document-picker";
 import { useContext } from "react";
-import { DocumentContext, DocItem } from "../../../context/DocumentContext";
-import { databases, storage, appwriteConfig, setJWT } from "../../../lib/appwrite";
-import { ID, Permission, Role } from "react-native-appwrite";
+import { DocumentContext } from "../../../context/DocumentContext";
+import { uploadDocument } from "../../../lib/appwrite";
 import { useAuth, useUser } from "@clerk/clerk-expo";
-import { readAsStringAsync } from "expo-file-system/legacy"; // Correct import
-
-const ALLOWED_EXTS = ["pdf", "doc", "docx", "ppt", "pptx", "xls", "xlsx", "csv"];
-
+ 
 interface IconsMap {
   [key: string]: any;
   home: any;
@@ -21,100 +16,6 @@ interface IconsMap {
   profile: any;
   chat: any;
 }
-
-const uploadDocument = async (
-  getToken: () => Promise<string | null>,
-  user: any,
-  setDocuments: React.Dispatch<React.SetStateAction<DocItem[]>>,
-  navigateOnError: (errorMsg: string) => void
-) => {
-  try {
-    const jwt = await getToken();
-    if (jwt) setJWT(jwt);
-
-    const res = await DocumentPicker.getDocumentAsync({
-      type: "*/*",
-      copyToCacheDirectory: true,
-    });
-
-    if (res.canceled) {
-      router.navigate("/(root)/(tabs)/home");
-      return;
-    }
-
-    const { name, uri, mimeType } = res.assets[0];
-    const ext = name.split(".").pop()?.toLowerCase() || "";
-
-    if (!ALLOWED_EXTS.includes(ext)) {
-      navigateOnError(`File type ".${ext}" is not supported. Only PDF, Word, Excel, and PowerPoint files are allowed.`);
-      return;
-    }
-
-    // Prefer native fetch to produce a Blob compatible with Appwrite SDK
-    // React Native descriptor object accepted by Appwrite RN SDK
-    const fileToUpload = {
-      uri,
-      name,
-      type: mimeType || `application/${ext}`,
-    } as any;
-
-    const uploaded = await storage.createFile(
-      appwriteConfig.bucketId,
-      ID.unique(),
-      fileToUpload,
-      [
-        Permission.read(Role.users()),
-        Permission.write(Role.users()),
-        Permission.delete(Role.users()),
-      ]
-    );
-
-    if (!uploaded || !uploaded.$id) {
-      throw new Error("Upload failed: no file id returned");
-    }
-
-    const id = ID.unique();
-    const uploadedAt = Date.now();
-    const source = inferSourceFromUri(uri || "");
-    const newDoc: DocItem = {
-      id,
-      name,
-      ext,
-      source,
-      uploadedAt,
-      favorite: false,
-      fileId: uploaded.$id,
-      userId: user?.id || "anonymous",
-    };
-
-    await databases.createDocument(
-      appwriteConfig.databaseId,
-      appwriteConfig.collectionId,
-      id,
-      newDoc,
-      [
-        Permission.read(Role.users()),
-        Permission.write(Role.users()),
-        Permission.delete(Role.users()),
-      ]
-    );
-
-    setDocuments((prev: DocItem[]) => [newDoc, ...prev]);
-    router.navigate("/(root)/(tabs)/home");
-  } catch (err) {
-    console.error(err);
-    navigateOnError("Could not upload document. Please try again.");
-  }
-};
-
-const inferSourceFromUri = (uri: string) => {
-  if (!uri) return "My phone";
-  const lower = uri.toLowerCase();
-  if (lower.includes("whatsapp")) return "WhatsApp";
-  if (lower.includes("download") || lower.includes("downloads")) return "Download";
-  if (lower.includes("drive")) return "Drive";
-  return "My phone";
-};
 
 export default function Layout() {
   const { setDocuments } = useContext(DocumentContext)!;
