@@ -1,5 +1,3 @@
-import { useUser, useAuth } from "@clerk/clerk-expo";
-import { router } from "expo-router";
 import React, { useState, useRef, useEffect, useContext } from "react";
 import {
   Text,
@@ -22,6 +20,11 @@ import * as DocumentPicker from "expo-document-picker";
 import { Ionicons, MaterialIcons, Feather } from "@expo/vector-icons";
 import { icons } from "@/constants";
 import { DocumentContext, DocItem } from "../../../context/DocumentContext";
+import { databases, storage, appwriteConfig, setJWT } from "../../../lib/appwrite";
+import { ID, Permission, Role } from "react-native-appwrite";
+import { useUser, useAuth } from "@clerk/clerk-expo";
+import { router } from "expo-router";
+import { readAsStringAsync } from "expo-file-system/legacy"; // Correct import
 
 const { width } = Dimensions.get("window");
 
@@ -35,25 +38,17 @@ const ICONS = {
 
 const ALLOWED_EXTS = ["pdf", "doc", "docx", "ppt", "pptx", "xls", "xlsx", "csv"];
 
-const useDocumentContext = () => {
-  const context = useContext(DocumentContext);
-  if (!context) {
-    throw new Error("useDocumentContext must be used within a DocumentContext.Provider");
-  }
-  return context;
-};
-
 const Home = () => {
   const { user, isLoaded } = useUser();
-  const { signOut } = useAuth();
-  const { documents, setDocuments } = useDocumentContext();
-
+  const { signOut, getToken } = useAuth();
+  const { documents, setDocuments } = useContext(DocumentContext)!;
   const [searchQuery, setSearchQuery] = useState("");
+  const [seeMoreSearchQuery, setSeeMoreSearchQuery] = useState("");
   const [menuVisible, setMenuVisible] = useState(false);
+  const [seeMoreVisible, setSeeMoreVisible] = useState(false);
   const [selectedDoc, setSelectedDoc] = useState<DocItem | null>(null);
   const [errorMsg, setErrorMsg] = useState("");
   const errorAnim = useRef(new Animated.Value(-100)).current;
-
   const headerLottie = require("../../../assets/images/learning.json");
   const noDataLottie = require("../../../assets/images/No-Data.json");
 
@@ -108,6 +103,9 @@ const Home = () => {
 
   const handlePickDocument = async () => {
     try {
+      const jwt = await getToken();
+      if (jwt) setJWT(jwt);
+
       const res = await DocumentPicker.getDocumentAsync({
         type: "*/*",
         copyToCacheDirectory: true,
@@ -115,38 +113,108 @@ const Home = () => {
 
       if (res.canceled) return;
 
-      const { name, uri } = res.assets[0];
+      const { name, uri, mimeType } = res.assets[0];
       const ext = getExt(name);
 
       if (!ALLOWED_EXTS.includes(ext)) {
         setErrorMsg(`File type ".${ext}" is not supported. Only PDF, Word, Excel, and PowerPoint files are allowed.`);
+        setTimeout(() => setErrorMsg(""), 2000);
         return;
       }
 
-      const id = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+      // React Native descriptor object accepted by Appwrite RN SDK
+      const fileToUpload = {
+        uri,
+        name,
+        type: mimeType || `application/${ext}`,
+      } as any;
+
+      const uploaded = await storage.createFile(
+        appwriteConfig.bucketId,
+        ID.unique(),
+        fileToUpload,
+        [
+          Permission.read(Role.users()),
+          Permission.write(Role.users()),
+          Permission.delete(Role.users()),
+        ]
+      );
+
+      if (!uploaded || !uploaded.$id) {
+        throw new Error("Upload failed: no file id returned");
+      }
+
+      const id = ID.unique();
       const uploadedAt = Date.now();
       const source = inferSourceFromUri(uri || "");
-
       const newDoc: DocItem = {
         id,
         name,
-        uri,
         ext,
         source,
         uploadedAt,
         favorite: false,
+        fileId: uploaded.$id,
+        userId: user?.id || "anonymous",
       };
+
+      await databases.createDocument(
+        appwriteConfig.databaseId,
+        appwriteConfig.collectionId,
+        id,
+        newDoc,
+        [
+          Permission.read(Role.users()),
+          Permission.write(Role.users()),
+          Permission.delete(Role.users()),
+        ]
+      );
 
       setDocuments((prev: DocItem[]) => [newDoc, ...prev]);
     } catch (err) {
-      setErrorMsg("Could not pick document. Please try again.");
+      console.error(err);
+      setErrorMsg("Could not upload document. Please try again.");
+      setTimeout(() => setErrorMsg(""), 2000);
     }
   };
 
-  const toggleFavorite = (doc: DocItem, value: boolean) => {
-    setDocuments((prev: DocItem[]) =>
-      prev.map((d: DocItem) => (d.id === doc.id ? { ...d, favorite: value } : d))
-    );
+  const toggleFavorite = async (doc: DocItem, value: boolean) => {
+    try {
+      const jwt = await getToken();
+      if (jwt) setJWT(jwt);
+
+      await databases.updateDocument(
+        appwriteConfig.databaseId,
+        appwriteConfig.collectionId,
+        doc.id,
+        { favorite: value }
+      );
+
+      setDocuments((prev: DocItem[]) =>
+        prev.map((d: DocItem) => (d.id === doc.id ? { ...d, favorite: value } : d))
+      );
+    } catch (error) {
+      console.error(error);
+      setErrorMsg("Could not update favorite status. Please try again.");
+      setTimeout(() => setErrorMsg(""), 2000);
+    }
+  };
+
+  const handleDeleteDocument = async (doc: DocItem) => {
+    try {
+      const jwt = await getToken();
+      if (jwt) setJWT(jwt);
+
+      await storage.deleteFile(appwriteConfig.bucketId, doc.fileId);
+      await databases.deleteDocument(appwriteConfig.databaseId, appwriteConfig.collectionId, doc.id);
+
+      setDocuments((prev: DocItem[]) => prev.filter((d: DocItem) => d.id !== doc.id));
+      setMenuVisible(false);
+    } catch (error) {
+      console.error(error);
+      setErrorMsg("Could not delete document. Please try again.");
+      setTimeout(() => setErrorMsg(""), 2000);
+    }
   };
 
   const handleOpenMenu = (doc: DocItem) => {
@@ -174,18 +242,19 @@ const Home = () => {
   }
 
   const displayName = user?.firstName ? user.firstName : "User";
-
-  const filteredFavorites = documents.filter((d: DocItem) =>
-    d.favorite && d.name.toLowerCase().includes(searchQuery.toLowerCase())
-  );
-  const filteredNonFavorites = documents.filter((d: DocItem) =>
-    !d.favorite && d.name.toLowerCase().includes(searchQuery.toLowerCase())
+  const filteredFavorites = documents
+    .filter((d: DocItem) => d.favorite && d.name.toLowerCase().includes(searchQuery.toLowerCase()))
+    .slice(0, 4);
+  const filteredNonFavorites = documents
+    .filter((d: DocItem) => !d.favorite && d.name.toLowerCase().includes(searchQuery.toLowerCase()))
+    .slice(0, 4);
+  const filteredAllDocuments = documents.filter((d: DocItem) =>
+    d.name.toLowerCase().includes(seeMoreSearchQuery.toLowerCase())
   );
 
   return (
     <SafeAreaView style={styles.safe}>
       <ScrollView showsVerticalScrollIndicator={false}>
-        {/* Header */}
         <View style={styles.header}>
           <LottieView source={headerLottie} autoPlay loop style={{ width, height: 250 }} />
           <LinearGradient colors={["transparent", "#f8fafc"]} style={styles.gradient} />
@@ -198,8 +267,6 @@ const Home = () => {
             <Text style={styles.logoutText}>Logout</Text>
           </TouchableOpacity>
         </View>
-
-        {/* Search */}
         <View style={[styles.container, { marginTop: -40 }]}>
           <View style={styles.searchBox}>
             <Image source={icons.search} style={styles.searchIcon} />
@@ -212,11 +279,8 @@ const Home = () => {
             />
           </View>
         </View>
-
-        {/* Uploaded Documents */}
         <View style={[styles.container, { marginTop: 18 }]}>
           <Text style={styles.sectionTitle}>Uploaded documents</Text>
-
           {documents.length === 0 ? (
             <View style={styles.emptyCard}>
               <LottieView source={noDataLottie} autoPlay loop style={{ width: 120, height: 120 }} />
@@ -248,7 +312,9 @@ const Home = () => {
                     <View style={styles.fileRow}>
                       <Image source={icon} style={styles.fileIcon} />
                       <View style={styles.fileInfo}>
-                        <Text style={styles.fileName} numberOfLines={1}>{item.name}</Text>
+                        <Text style={styles.fileName} numberOfLines={1}>
+                          {item.name}
+                        </Text>
                         <View style={styles.fileMetaRow}>
                           <Text style={styles.fileSource}>{item.source}</Text>
                           <Text style={styles.fileDot}> · </Text>
@@ -263,7 +329,14 @@ const Home = () => {
                 }}
                 ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
               />
-
+              {filteredNonFavorites.length >= 4 && (
+                <TouchableOpacity
+                  onPress={() => setSeeMoreVisible(true)}
+                  style={styles.seeMoreBtn}
+                >
+                  <Text style={styles.seeMoreText}>See More</Text>
+                </TouchableOpacity>
+              )}
               {filteredFavorites.length > 0 && (
                 <View style={{ marginTop: 24 }}>
                   <Text style={styles.sectionTitle}>Favorites</Text>
@@ -271,7 +344,9 @@ const Home = () => {
                     <View key={item.id} style={styles.fileRow}>
                       <Image source={mapExtToIcon(item.ext)} style={styles.fileIcon} />
                       <View style={styles.fileInfo}>
-                        <Text style={styles.fileName} numberOfLines={1}>{item.name}</Text>
+                        <Text style={styles.fileName} numberOfLines={1}>
+                          {item.name}
+                        </Text>
                         <View style={styles.fileMetaRow}>
                           <Text style={styles.fileSource}>{item.source}</Text>
                           <Text style={styles.fileDot}> · </Text>
@@ -289,7 +364,6 @@ const Home = () => {
           )}
         </View>
       </ScrollView>
-
       {errorMsg !== "" && (
         <Animated.View style={[styles.errorBox, { transform: [{ translateY: errorAnim }] }]}>
           <View style={styles.errorContent}>
@@ -309,7 +383,6 @@ const Home = () => {
           </View>
         </Animated.View>
       )}
-
       <Modal visible={menuVisible} animationType="slide" transparent>
         <TouchableOpacity
           style={styles.modalOverlay}
@@ -321,7 +394,9 @@ const Home = () => {
               <View style={styles.modalHeader}>
                 <Image source={mapExtToIcon(selectedDoc.ext)} style={styles.fileIcon} />
                 <View style={styles.fileInfo}>
-                  <Text style={styles.fileName} numberOfLines={1}>{selectedDoc.name}</Text>
+                  <Text style={styles.fileName} numberOfLines={1}>
+                    {selectedDoc.name}
+                  </Text>
                   <View style={styles.fileMetaRow}>
                     <Text style={styles.fileSource}>{selectedDoc.source}</Text>
                     <Text style={styles.fileDot}> · </Text>
@@ -367,13 +442,74 @@ const Home = () => {
             </View>
             <View style={styles.menuOption}>
               <Ionicons name="trash-outline" size={20} color="red" />
-              <Text style={[styles.menuText, { color: "red" }]}>Delete</Text>
+              <TouchableOpacity onPress={() => selectedDoc && handleDeleteDocument(selectedDoc)}>
+                <Text style={[styles.menuText, { color: "red" }]}>Delete</Text>
+              </TouchableOpacity>
             </View>
             <View style={styles.menuOption}>
               <Ionicons name="information-circle-outline" size={20} color="#374151" />
               <Text style={styles.menuText}>Properties</Text>
             </View>
             <TouchableOpacity onPress={() => setMenuVisible(false)} style={styles.closeMenuBtn}>
+              <Text style={{ color: "white", fontWeight: "700" }}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+      <Modal visible={seeMoreVisible} animationType="slide" transparent>
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setSeeMoreVisible(false)}
+        >
+          <View style={styles.modalContent}>
+            <View style={[styles.searchBox, { marginBottom: 20 }]}>
+              <Image source={icons.search} style={styles.searchIcon} />
+              <TextInput
+                placeholder="Search document"
+                value={seeMoreSearchQuery}
+                onChangeText={setSeeMoreSearchQuery}
+                style={styles.searchInput}
+                placeholderTextColor="#9CA3AF"
+              />
+            </View>
+            {filteredAllDocuments.length === 0 ? (
+              <View style={styles.emptyCard}>
+                <LottieView source={noDataLottie} autoPlay loop style={{ width: 120, height: 120 }} />
+                <Text style={styles.emptyTitle}>No documents found</Text>
+                <Text style={styles.emptySubtitle}>
+                  File named "{seeMoreSearchQuery}" not found. Try a different search term.
+                </Text>
+              </View>
+            ) : (
+              <FlatList
+                data={filteredAllDocuments}
+                keyExtractor={(item: DocItem) => item.id}
+                renderItem={({ item }: { item: DocItem }) => {
+                  const icon = mapExtToIcon(item.ext);
+                  return (
+                    <View style={styles.fileRow}>
+                      <Image source={icon} style={styles.fileIcon} />
+                      <View style={styles.fileInfo}>
+                        <Text style={styles.fileName} numberOfLines={1}>
+                          {item.name}
+                        </Text>
+                        <View style={styles.fileMetaRow}>
+                          <Text style={styles.fileSource}>{item.source}</Text>
+                          <Text style={styles.fileDot}> · </Text>
+                          <Text style={styles.fileTime}>{formatRelativeTime(item.uploadedAt)}</Text>
+                        </View>
+                      </View>
+                      <TouchableOpacity onPress={() => handleOpenMenu(item)} style={styles.menuBtn}>
+                        <Ionicons name="ellipsis-vertical" size={20} color="#6b7280" />
+                      </TouchableOpacity>
+                    </View>
+                  );
+                }}
+                ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
+              />
+            )}
+            <TouchableOpacity onPress={() => setSeeMoreVisible(false)} style={styles.closeMenuBtn}>
               <Text style={{ color: "white", fontWeight: "700" }}>Close</Text>
             </TouchableOpacity>
           </View>
@@ -419,12 +555,10 @@ const styles = StyleSheet.create({
   searchInput: { flex: 1, fontSize: 16, color: "#111827" },
   sectionTitle: { fontSize: 15, fontWeight: "700", color: "#111827", marginBottom: 10 },
   emptyCard: {
-    backgroundColor: "#fff",
     borderRadius: 16,
     padding: 20,
     alignItems: "center",
     justifyContent: "center",
-    elevation: 2,
   },
   emptyTitle: { fontSize: 18, fontWeight: "700", color: "#111827", marginTop: 6 },
   emptySubtitle: { fontSize: 14, color: "#6B7280", textAlign: "center", marginTop: 6, marginBottom: 12 },
@@ -454,6 +588,17 @@ const styles = StyleSheet.create({
   fileDot: { color: "#6B7280", fontSize: 13 },
   fileTime: { color: "#6B7280", fontSize: 13 },
   menuBtn: { paddingHorizontal: 8, paddingVertical: 6 },
+  seeMoreBtn: {
+    marginTop: 16,
+    alignItems: "center",
+  },
+  seeMoreText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#16A34A",
+    borderBottomWidth: 1,
+    borderBottomColor: "#16A34A",
+  },
   errorBox: {
     position: "absolute",
     top: 0,
@@ -491,6 +636,7 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 20,
     padding: 20,
     paddingBottom: 40,
+    maxHeight: "80%",
   },
   modalHeader: {
     backgroundColor: "#fff",

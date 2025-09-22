@@ -6,22 +6,16 @@ import * as DocumentPicker from "expo-document-picker";
 import LottieView from "lottie-react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { DocumentContext, DocItem } from "../../../context/DocumentContext";
-
-const ALLOWED_EXTS = ["pdf", "doc", "docx", "ppt", "pptx", "xls", "xlsx", "csv"];
-
-const useDocumentContext = () => {
-  const context = useContext(DocumentContext);
-  if (!context) {
-    throw new Error("useDocumentContext must be used within a DocumentContext.Provider");
-  }
-  return context;
-};
+import { useAuth, useUser } from "@clerk/clerk-expo";
+import { uploadDocument } from "../../../lib/appwrite";
 
 const Upload = () => {
-  const { setDocuments } = useDocumentContext();
+  const { setDocuments } = useContext(DocumentContext)!;
   const { errorMsg: initialErrorMsg } = useLocalSearchParams<{ errorMsg?: string }>();
-  const [errorMsg, setErrorMsg] = useState(initialErrorMsg || "");
+  const [errorMsg, setErrorMsg] = useState<string>(initialErrorMsg || "");
   const errorAnim = useRef(new Animated.Value(-100)).current;
+  const { getToken } = useAuth();
+  const { user } = useUser();
   const notFoundLottie = require("../../../assets/images/not-found.json");
 
   useEffect(() => {
@@ -40,67 +34,8 @@ const Upload = () => {
     }
   }, [errorMsg]);
 
-  const pickDocument = async () => {
-    try {
-      const res = await DocumentPicker.getDocumentAsync({
-        type: "*/*",
-        copyToCacheDirectory: true,
-      });
-
-      if (res.canceled) {
-        router.replace("/(root)/(tabs)/home");
-        return;
-      }
-
-      const { name, uri } = res.assets[0];
-      const ext = getExt(name);
-
-      if (!ALLOWED_EXTS.includes(ext)) {
-        setErrorMsg(`File type ".${ext}" is not supported. Only PDF, Word, Excel, and PowerPoint files are allowed.`);
-        setTimeout(() => {
-          setErrorMsg("");
-        }, 2000);
-        return;
-      }
-
-      const id = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
-      const uploadedAt = Date.now();
-      const source = inferSourceFromUri(uri || "");
-
-      const newDoc: DocItem = {
-        id,
-        name,
-        uri,
-        ext,
-        source,
-        uploadedAt,
-        favorite: false,
-      };
-
-      setDocuments((prev: DocItem[]) => [newDoc, ...prev]);
-      router.replace("/(root)/(tabs)/home");
-    } catch (err) {
-      setErrorMsg("Could not pick document. Please try again.");
-      setTimeout(() => {
-        setErrorMsg("");
-      }, 2000);
-    }
-  };
-
-  const getExt = (filename: string) => {
-    if (!filename) return "";
-    const parts = filename.split(".");
-    return parts.length > 1 ? parts[parts.length - 1].toLowerCase() : "";
-  };
-
-  const inferSourceFromUri = (uri: string) => {
-    if (!uri) return "My phone";
-    const lower = uri.toLowerCase();
-    if (lower.includes("whatsapp")) return "WhatsApp";
-    if (lower.includes("download") || lower.includes("downloads")) return "Download";
-    if (lower.includes("drive")) return "Drive";
-    return "My phone";
-  };
+  const pickDocument = () =>
+    uploadDocument(getToken, user, setDocuments, (errorMsg: string) => setErrorMsg(errorMsg));
 
   return (
     <SafeAreaView style={styles.safe}>

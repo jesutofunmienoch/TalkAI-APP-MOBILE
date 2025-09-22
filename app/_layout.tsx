@@ -7,7 +7,8 @@ import "react-native-reanimated";
 import { LogBox } from "react-native";
 import "../styles/global.css";
 import { tokenCache } from "@/lib/auth";
-import { DocumentContext, DocItem } from "../context/DocumentContext";
+import { DocumentContext, DocumentProvider, DocItem } from "../context/DocumentContext";
+import { SafeAreaProvider } from "react-native-safe-area-context";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -48,12 +49,14 @@ export default function RootLayout() {
     <DocumentContext.Provider value={{ documents, setDocuments }}>
       <ClerkProvider tokenCache={tokenCache} publishableKey={publishableKey}>
         <ClerkLoaded>
-          <Stack>
-            <Stack.Screen name="index" options={{ headerShown: false }} />
-            <Stack.Screen name="(auth)" options={{ headerShown: false }} />
-            <Stack.Screen name="(root)" options={{ headerShown: false }} />
-            <Stack.Screen name="+not-found" />
-          </Stack>
+          <SafeAreaProvider>
+            <Stack>
+              <Stack.Screen name="index" options={{ headerShown: false }} />
+              <Stack.Screen name="(auth)" options={{ headerShown: false }} />
+              <Stack.Screen name="(root)" options={{ headerShown: false }} />
+              <Stack.Screen name="+not-found" />
+            </Stack>
+          </SafeAreaProvider>
         </ClerkLoaded>
       </ClerkProvider>
     </DocumentContext.Provider>
