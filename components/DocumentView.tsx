@@ -1,0 +1,133 @@
+import React, { useContext, useEffect, useState } from "react";
+import { Text, View, StyleSheet, Dimensions, TouchableOpacity, ScrollView } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { LinearGradient } from "expo-linear-gradient";
+import LottieView from "lottie-react-native";
+import { Ionicons } from "@expo/vector-icons";
+import { DocumentContext, DocItem } from "@/context/DocumentContext";
+import { useLocalSearchParams, router } from "expo-router";
+import DocNav from "@/components/DocNav";
+import AskAI from "@/app/document/[docId]/askai";
+import Note from "@/app/document/[docId]/note";
+import Summary from "@/app/document/[docId]/summary";
+import Settings from "@/app/document/[docId]/settings";
+
+const { width } = Dimensions.get("window");
+
+const DocumentView = () => {
+  const { documents } = useContext(DocumentContext)!;
+  const { docId } = useLocalSearchParams();
+  const [document, setDocument] = useState<DocItem | null>(null);
+  const [activeTab, setActiveTab] = useState("askai");
+  const headerLottie = require("@/assets/images/learning.json");
+
+  useEffect(() => {
+    const doc = documents.find((d: DocItem) => d.id === docId);
+    if (doc) {
+      setDocument(doc);
+    } else {
+      console.error(`Document with ID ${docId} not found`);
+      router.back();
+    }
+  }, [docId, documents]);
+
+  if (!document) {
+    return (
+      <SafeAreaView style={styles.safe}>
+        <View style={styles.loadingBox}>
+          <Text style={styles.loadingText}>Loading document...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  return (
+    <SafeAreaView style={styles.safe}>
+      <View style={{ flex: 1 }}>
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={{
+            paddingBottom: 20,
+          }}
+        >
+          <View style={styles.header}>
+            <LottieView source={headerLottie} autoPlay loop style={{ width, height: 250 }} />
+            <LinearGradient colors={["transparent", "#f8fafc"]} style={styles.gradient} />
+            <View style={styles.headerTextWrap}>
+              <Text style={styles.title} numberOfLines={1}>
+                {document.name}
+              </Text>
+              <TouchableOpacity style={styles.moreBtn}>
+                <Ionicons name="ellipsis-vertical" size={20} color="#111827" />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.fileMetaRow}>
+              <Text style={styles.fileSource}>{document.source}</Text>
+              <Text style={styles.fileDot}> · </Text>
+              <Text style={styles.fileTime}>{new Date(document.uploadedAt).toLocaleDateString()}</Text>
+            </View>
+            <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+              <Ionicons name="arrow-back" size={24} color="#111827" />
+            </TouchableOpacity>
+          </View>
+          <View style={styles.container}>
+            <DocNav activeTab={activeTab} setActiveTab={setActiveTab} />
+            <View style={{ marginTop: 20 }}>
+              {activeTab === "askai" && <AskAI />}
+              {activeTab === "note" && <Note />}
+              {activeTab === "summary" && <Summary />}
+              {activeTab === "settings" && <Settings />}
+            </View>
+          </View>
+        </ScrollView>
+      </View>
+    </SafeAreaView>
+  );
+};
+
+export default DocumentView;
+
+const styles = StyleSheet.create({
+  safe: { flex: 1, backgroundColor: "#f8fafc" },
+  container: { paddingHorizontal: 20, marginTop: -40 },
+  header: { position: "relative", width: "100%", height: 250, backgroundColor: "#f8fafc" },
+  gradient: { position: "absolute", bottom: 0, left: 0, right: 0, height: 180 },
+  headerTextWrap: {
+    position: "absolute",
+    bottom: 72,
+    left: 20,
+    right: 20,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  title: { fontSize: 18, fontWeight: "700", color: "#111827", flex: 1, marginRight: 10 },
+  moreBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "rgba(156,163,175,0.1)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  fileMetaRow: {
+    position: "absolute",
+    bottom: 50,
+    left: 20,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  fileSource: { color: "#6B7280", fontSize: 13 },
+  fileDot: { color: "#6B7280", fontSize: 13 },
+  fileTime: { color: "#6B7280", fontSize: 13 },
+  backBtn: {
+    position: "absolute",
+    top: 18,
+    left: 18,
+    padding: 8,
+    backgroundColor: "rgba(156,163,175,0.15)",
+    borderRadius: 12,
+  },
+  loadingBox: { flex: 1, alignItems: "center", justifyContent: "center" },
+  loadingText: { color: "#374151", fontSize: 16 },
+});

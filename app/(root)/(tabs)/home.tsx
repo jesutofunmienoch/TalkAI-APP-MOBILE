@@ -16,24 +16,23 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import LottieView from "lottie-react-native";
-import * as DocumentPicker from "expo-document-picker";
 import { Ionicons, MaterialIcons, Feather } from "@expo/vector-icons";
 import { icons } from "@/constants";
-import { DocumentContext, DocItem } from "../../../context/DocumentContext";
-import { databases, storage, appwriteConfig, setJWT } from "../../../lib/appwrite";
-import { ID, Permission, Role } from "react-native-appwrite";
+import { DocumentContext, DocItem } from "@/context/DocumentContext";
+import { databases, storage, appwriteConfig, Permission, Role, account } from "@/lib/appwrite";
 import { useUser, useAuth } from "@clerk/clerk-expo";
 import { router } from "expo-router";
-import { readAsStringAsync } from "expo-file-system/legacy"; // Correct import
+import { uploadDocument } from "@/lib/appwrite";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
-const { width } = Dimensions.get("window");
+const { width, height } = Dimensions.get("window");
 
 const ICONS = {
-  pdf: require("../../../assets/images/pdf.png"),
-  word: require("../../../assets/images/word.png"),
-  excel: require("../../../assets/images/excel.png"),
-  ppt: require("../../../assets/images/ppt.png"),
-  generic: require("../../../assets/images/no-document.png"),
+  pdf: require("@/assets/images/pdf.png"),
+  word: require("@/assets/images/word.png"),
+  excel: require("@/assets/images/excel.png"),
+  ppt: require("@/assets/images/ppt.png"),
+  generic: require("@/assets/images/no-document.png"),
 };
 
 const ALLOWED_EXTS = ["pdf", "doc", "docx", "ppt", "pptx", "xls", "xlsx", "csv"];
@@ -48,9 +47,11 @@ const Home = () => {
   const [seeMoreVisible, setSeeMoreVisible] = useState(false);
   const [selectedDoc, setSelectedDoc] = useState<DocItem | null>(null);
   const [errorMsg, setErrorMsg] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
   const errorAnim = useRef(new Animated.Value(-100)).current;
-  const headerLottie = require("../../../assets/images/learning.json");
-  const noDataLottie = require("../../../assets/images/No-Data.json");
+  const headerLottie = require("@/assets/images/learning.json");
+  const noDataLottie = require("@/assets/images/No-Data.json");
+  const loadingLottie = require("@/assets/images/loading.json");
 
   useEffect(() => {
     if (errorMsg) {
@@ -82,15 +83,6 @@ const Home = () => {
     return ICONS.generic;
   };
 
-  const inferSourceFromUri = (uri: string) => {
-    if (!uri) return "My phone";
-    const lower = uri.toLowerCase();
-    if (lower.includes("whatsapp")) return "WhatsApp";
-    if (lower.includes("download") || lower.includes("downloads")) return "Download";
-    if (lower.includes("drive")) return "Drive";
-    return "My phone";
-  };
-
   const formatRelativeTime = (timestamp: number) => {
     const now = Date.now();
     const diff = Math.floor((now - timestamp) / 1000);
@@ -101,100 +93,46 @@ const Home = () => {
     return new Date(timestamp).toLocaleDateString();
   };
 
-  const handlePickDocument = async () => {
-    try {
-      const jwt = await getToken();
-      if (jwt) setJWT(jwt);
-
-      const res = await DocumentPicker.getDocumentAsync({
-        type: "*/*",
-        copyToCacheDirectory: true,
-      });
-
-      if (res.canceled) return;
-
-      const { name, uri, mimeType } = res.assets[0];
-      const ext = getExt(name);
-
-      if (!ALLOWED_EXTS.includes(ext)) {
-        setErrorMsg(`File type ".${ext}" is not supported. Only PDF, Word, Excel, and PowerPoint files are allowed.`);
+  const handlePickDocument = () => {
+    uploadDocument(
+      user,
+      setDocuments,
+      (errorMsg) => {
+        setErrorMsg(errorMsg);
         setTimeout(() => setErrorMsg(""), 2000);
-        return;
-      }
-
-      // React Native descriptor object accepted by Appwrite RN SDK
-      const fileToUpload = {
-        uri,
-        name,
-        type: mimeType || `application/${ext}`,
-      } as any;
-
-      const uploaded = await storage.createFile(
-        appwriteConfig.bucketId,
-        ID.unique(),
-        fileToUpload,
-        [
-          Permission.read(Role.users()),
-          Permission.write(Role.users()),
-          Permission.delete(Role.users()),
-        ]
-      );
-
-      if (!uploaded || !uploaded.$id) {
-        throw new Error("Upload failed: no file id returned");
-      }
-
-      const id = ID.unique();
-      const uploadedAt = Date.now();
-      const source = inferSourceFromUri(uri || "");
-      const newDoc: DocItem = {
-        id,
-        name,
-        ext,
-        source,
-        uploadedAt,
-        favorite: false,
-        fileId: uploaded.$id,
-        userId: user?.id || "anonymous",
-      };
-
-      await databases.createDocument(
-        appwriteConfig.databaseId,
-        appwriteConfig.collectionId,
-        id,
-        newDoc,
-        [
-          Permission.read(Role.users()),
-          Permission.write(Role.users()),
-          Permission.delete(Role.users()),
-        ]
-      );
-
-      setDocuments((prev: DocItem[]) => [newDoc, ...prev]);
-    } catch (err) {
-      console.error(err);
-      setErrorMsg("Could not upload document. Please try again.");
-      setTimeout(() => setErrorMsg(""), 2000);
-    }
+      },
+      getToken
+    );
   };
 
   const toggleFavorite = async (doc: DocItem, value: boolean) => {
     try {
-      const jwt = await getToken();
-      if (jwt) setJWT(jwt);
+      if (!user?.id) {
+        setErrorMsg("User not authenticated. Please log in.");
+        setTimeout(() => setErrorMsg(""), 2000);
+        return;
+      }
+
+      const jwt = await getToken({ template: "appwrite" });
+      if (jwt) {
+        databases.client.setJWT(jwt);
+      } else {
+        throw new Error("Failed to retrieve JWT token");
+      }
 
       await databases.updateDocument(
         appwriteConfig.databaseId,
         appwriteConfig.collectionId,
         doc.id,
-        { favorite: value }
+        { favorite: value },
+        [Permission.update(Role.user(user.id))]
       );
 
       setDocuments((prev: DocItem[]) =>
         prev.map((d: DocItem) => (d.id === doc.id ? { ...d, favorite: value } : d))
       );
-    } catch (error) {
-      console.error(error);
+    } catch (error: any) {
+      console.error("Toggle favorite error:", error.message);
       setErrorMsg("Could not update favorite status. Please try again.");
       setTimeout(() => setErrorMsg(""), 2000);
     }
@@ -202,16 +140,27 @@ const Home = () => {
 
   const handleDeleteDocument = async (doc: DocItem) => {
     try {
-      const jwt = await getToken();
-      if (jwt) setJWT(jwt);
+      if (!user?.id) {
+        setErrorMsg("User not authenticated. Please log in.");
+        setTimeout(() => setErrorMsg(""), 2000);
+        return;
+      }
+
+      const jwt = await getToken({ template: "appwrite" });
+      if (jwt) {
+        storage.client.setJWT(jwt);
+        databases.client.setJWT(jwt);
+      } else {
+        throw new Error("Failed to retrieve JWT token");
+      }
 
       await storage.deleteFile(appwriteConfig.bucketId, doc.fileId);
       await databases.deleteDocument(appwriteConfig.databaseId, appwriteConfig.collectionId, doc.id);
 
       setDocuments((prev: DocItem[]) => prev.filter((d: DocItem) => d.id !== doc.id));
       setMenuVisible(false);
-    } catch (error) {
-      console.error(error);
+    } catch (error: any) {
+      console.error("Delete document error:", error.message);
       setErrorMsg("Could not delete document. Please try again.");
       setTimeout(() => setErrorMsg(""), 2000);
     }
@@ -222,8 +171,21 @@ const Home = () => {
     setMenuVisible(true);
   };
 
+  const handleViewDocument = (doc: DocItem) => {
+    setIsLoading(true);
+    router.push({
+      pathname: "/(root)/document-view" as const,
+      params: { docId: doc.id },
+    });
+    setIsLoading(false);
+  };
+
   const handleSignOut = async () => {
     try {
+      await account.deleteSession('current');
+      await AsyncStorage.removeItem("appwrite_session");
+      // Clear any client session set directly
+      try { account.client.setSession?.(""); } catch {}
       await signOut();
       router.replace("/(auth)/sign-in");
     } catch {
@@ -309,7 +271,7 @@ const Home = () => {
                 renderItem={({ item }: { item: DocItem }) => {
                   const icon = mapExtToIcon(item.ext);
                   return (
-                    <View style={styles.fileRow}>
+                    <TouchableOpacity style={styles.fileRow} onPress={() => handleViewDocument(item)}>
                       <Image source={icon} style={styles.fileIcon} />
                       <View style={styles.fileInfo}>
                         <Text style={styles.fileName} numberOfLines={1}>
@@ -321,10 +283,14 @@ const Home = () => {
                           <Text style={styles.fileTime}>{formatRelativeTime(item.uploadedAt)}</Text>
                         </View>
                       </View>
-                      <TouchableOpacity onPress={() => handleOpenMenu(item)} style={styles.menuBtn}>
+                      <TouchableOpacity
+                        onPress={() => handleOpenMenu(item)}
+                        style={styles.menuBtn}
+                        activeOpacity={0.7}
+                      >
                         <Ionicons name="ellipsis-vertical" size={20} color="#6b7280" />
                       </TouchableOpacity>
-                    </View>
+                    </TouchableOpacity>
                   );
                 }}
                 ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
@@ -341,7 +307,11 @@ const Home = () => {
                 <View style={{ marginTop: 24 }}>
                   <Text style={styles.sectionTitle}>Favorites</Text>
                   {filteredFavorites.map((item: DocItem) => (
-                    <View key={item.id} style={styles.fileRow}>
+                    <TouchableOpacity
+                      key={item.id}
+                      style={styles.fileRow}
+                      onPress={() => handleViewDocument(item)}
+                    >
                       <Image source={mapExtToIcon(item.ext)} style={styles.fileIcon} />
                       <View style={styles.fileInfo}>
                         <Text style={styles.fileName} numberOfLines={1}>
@@ -353,10 +323,14 @@ const Home = () => {
                           <Text style={styles.fileTime}>{formatRelativeTime(item.uploadedAt)}</Text>
                         </View>
                       </View>
-                      <TouchableOpacity onPress={() => handleOpenMenu(item)} style={styles.menuBtn}>
+                      <TouchableOpacity
+                        onPress={() => handleOpenMenu(item)}
+                        style={styles.menuBtn}
+                        activeOpacity={0.7}
+                      >
                         <Ionicons name="ellipsis-vertical" size={20} color="#6b7280" />
                       </TouchableOpacity>
-                    </View>
+                    </TouchableOpacity>
                   ))}
                 </View>
               )}
@@ -385,135 +359,152 @@ const Home = () => {
       )}
       <Modal visible={menuVisible} animationType="slide" transparent>
         <TouchableOpacity
-          style={styles.modalOverlay}
+          style={[styles.modalOverlay, { justifyContent: "flex-end" }]}
           activeOpacity={1}
           onPress={() => setMenuVisible(false)}
         >
-          <View style={styles.modalContent}>
-            {selectedDoc && (
-              <View style={styles.modalHeader}>
-                <Image source={mapExtToIcon(selectedDoc.ext)} style={styles.fileIcon} />
-                <View style={styles.fileInfo}>
-                  <Text style={styles.fileName} numberOfLines={1}>
-                    {selectedDoc.name}
-                  </Text>
-                  <View style={styles.fileMetaRow}>
-                    <Text style={styles.fileSource}>{selectedDoc.source}</Text>
-                    <Text style={styles.fileDot}> · </Text>
-                    <Text style={styles.fileTime}>{formatRelativeTime(selectedDoc.uploadedAt)}</Text>
+          <View style={[styles.modalContent, { minHeight: 400, maxHeight: height * 0.8 }]}>
+            <TouchableOpacity activeOpacity={1} onPress={() => {}}>
+              {selectedDoc && (
+                <View style={styles.modalHeader}>
+                  <Image source={mapExtToIcon(selectedDoc.ext)} style={styles.fileIcon} />
+                  <View style={styles.fileInfo}>
+                    <Text style={styles.fileName} numberOfLines={1}>
+                      {selectedDoc.name}
+                    </Text>
+                    <View style={styles.fileMetaRow}>
+                      <Text style={styles.fileSource}>{selectedDoc.source}</Text>
+                      <Text style={styles.fileDot}> · </Text>
+                      <Text style={styles.fileTime}>{formatRelativeTime(selectedDoc.uploadedAt)}</Text>
+                    </View>
                   </View>
                 </View>
+              )}
+              <View style={styles.menuOption}>
+                <MaterialIcons name="picture-as-pdf" size={20} color="#374151" />
+                <Text style={styles.menuText}>Convert to PDF</Text>
               </View>
-            )}
-            <View style={styles.menuOption}>
-              <MaterialIcons name="picture-as-pdf" size={20} color="#374151" />
-              <Text style={styles.menuText}>Convert to PDF</Text>
-            </View>
-            <View style={styles.menuOption}>
-              <Feather name="share-2" size={20} color="#374151" />
-              <Text style={styles.menuText}>Share</Text>
-            </View>
-            <View style={styles.menuOption}>
-              <Ionicons name="star-outline" size={20} color="#374151" />
-              <Text style={styles.menuText}>Favorite</Text>
-              <Switch
-                value={selectedDoc?.favorite}
-                onValueChange={(value) => {
-                  if (selectedDoc) {
-                    toggleFavorite(selectedDoc, value);
-                  }
-                }}
-                trackColor={{ false: "#d1d5db", true: "#16a34a" }}
-                thumbColor="white"
-                style={{ marginLeft: "auto" }}
-              />
-            </View>
-            <View style={styles.menuOption}>
-              <Ionicons name="cloud-upload-outline" size={20} color="#374151" />
-              <Text style={styles.menuText}>Upload to Cloud</Text>
-            </View>
-            <View style={styles.menuOption}>
-              <Ionicons name="create-outline" size={20} color="#374151" />
-              <Text style={styles.menuText}>Rename</Text>
-            </View>
-            <View style={styles.menuOption}>
-              <Ionicons name="remove-circle-outline" size={20} color="#374151" />
-              <Text style={styles.menuText}>Remove from List</Text>
-            </View>
-            <View style={styles.menuOption}>
-              <Ionicons name="trash-outline" size={20} color="red" />
-              <TouchableOpacity onPress={() => selectedDoc && handleDeleteDocument(selectedDoc)}>
-                <Text style={[styles.menuText, { color: "red" }]}>Delete</Text>
+              <View style={styles.menuOption}>
+                <Feather name="share-2" size={20} color="#374151" />
+                <Text style={styles.menuText}>Share</Text>
+              </View>
+              <View style={styles.menuOption}>
+                <Ionicons name="star-outline" size={20} color="#374151" />
+                <Text style={styles.menuText}>Favorite</Text>
+                <Switch
+                  value={selectedDoc?.favorite}
+                  onValueChange={(value) => {
+                    if (selectedDoc) {
+                      toggleFavorite(selectedDoc, value);
+                    }
+                  }}
+                  trackColor={{ false: "#d1d5db", true: "#16a34a" }}
+                  thumbColor="white"
+                  style={{ marginLeft: "auto" }}
+                />
+              </View>
+              <View style={styles.menuOption}>
+                <Ionicons name="create-outline" size={20} color="#374151" />
+                <Text style={styles.menuText}>Rename</Text>
+              </View>
+              <View style={styles.menuOption}>
+                <Ionicons name="remove-circle-outline" size={20} color="#374151" />
+                <Text style={styles.menuText}>Remove from List</Text>
+              </View>
+              <View style={styles.menuOption}>
+                <Ionicons name="trash-outline" size={20} color="red" />
+                <TouchableOpacity onPress={() => selectedDoc && handleDeleteDocument(selectedDoc)}>
+                  <Text style={[styles.menuText, { color: "red" }]}>Delete</Text>
+                </TouchableOpacity>
+              </View>
+              <View style={styles.menuOption}>
+                <Ionicons name="information-circle-outline" size={20} color="#374151" />
+                <Text style={styles.menuText}>Properties</Text>
+              </View>
+              <TouchableOpacity onPress={() => setMenuVisible(false)} style={styles.closeMenuBtn}>
+                <Text style={{ color: "white", fontWeight: "700" }}>Close</Text>
               </TouchableOpacity>
-            </View>
-            <View style={styles.menuOption}>
-              <Ionicons name="information-circle-outline" size={20} color="#374151" />
-              <Text style={styles.menuText}>Properties</Text>
-            </View>
-            <TouchableOpacity onPress={() => setMenuVisible(false)} style={styles.closeMenuBtn}>
-              <Text style={{ color: "white", fontWeight: "700" }}>Close</Text>
             </TouchableOpacity>
           </View>
         </TouchableOpacity>
       </Modal>
       <Modal visible={seeMoreVisible} animationType="slide" transparent>
         <TouchableOpacity
-          style={styles.modalOverlay}
+          style={[styles.modalOverlay, { justifyContent: "flex-end" }]}
           activeOpacity={1}
           onPress={() => setSeeMoreVisible(false)}
         >
-          <View style={styles.modalContent}>
-            <View style={[styles.searchBox, { marginBottom: 20 }]}>
-              <Image source={icons.search} style={styles.searchIcon} />
-              <TextInput
-                placeholder="Search document"
-                value={seeMoreSearchQuery}
-                onChangeText={setSeeMoreSearchQuery}
-                style={styles.searchInput}
-                placeholderTextColor="#9CA3AF"
-              />
-            </View>
-            {filteredAllDocuments.length === 0 ? (
-              <View style={styles.emptyCard}>
-                <LottieView source={noDataLottie} autoPlay loop style={{ width: 120, height: 120 }} />
-                <Text style={styles.emptyTitle}>No documents found</Text>
-                <Text style={styles.emptySubtitle}>
-                  File named "{seeMoreSearchQuery}" not found. Try a different search term.
-                </Text>
+          <View style={[styles.modalContent, { minHeight: 400, maxHeight: height * 0.8 }]}>
+            <TouchableOpacity activeOpacity={1} onPress={() => {}}>
+              <View style={[styles.searchBox, { marginBottom: 20 }]}>
+                <Image source={icons.search} style={styles.searchIcon} />
+                <TextInput
+                  placeholder="Search document"
+                  value={seeMoreSearchQuery}
+                  onChangeText={setSeeMoreSearchQuery}
+                  style={styles.searchInput}
+                  placeholderTextColor="#9CA3AF"
+                />
               </View>
-            ) : (
-              <FlatList
-                data={filteredAllDocuments}
-                keyExtractor={(item: DocItem) => item.id}
-                renderItem={({ item }: { item: DocItem }) => {
-                  const icon = mapExtToIcon(item.ext);
-                  return (
-                    <View style={styles.fileRow}>
-                      <Image source={icon} style={styles.fileIcon} />
-                      <View style={styles.fileInfo}>
-                        <Text style={styles.fileName} numberOfLines={1}>
-                          {item.name}
-                        </Text>
-                        <View style={styles.fileMetaRow}>
-                          <Text style={styles.fileSource}>{item.source}</Text>
-                          <Text style={styles.fileDot}> · </Text>
-                          <Text style={styles.fileTime}>{formatRelativeTime(item.uploadedAt)}</Text>
+              {filteredAllDocuments.length === 0 ? (
+                <View style={styles.emptyCard}>
+                  <LottieView source={noDataLottie} autoPlay loop style={{ width: 120, height: 120 }} />
+                  <Text style={styles.emptyTitle}>No documents found</Text>
+                  <Text style={styles.emptySubtitle}>
+                    File named "{seeMoreSearchQuery}" not found. Try a different search term.
+                  </Text>
+                </View>
+              ) : (
+                <FlatList
+                  data={filteredAllDocuments}
+                  keyExtractor={(item: DocItem) => item.id}
+                  renderItem={({ item }: { item: DocItem }) => {
+                    const icon = mapExtToIcon(item.ext);
+                    return (
+                      <TouchableOpacity
+                        style={styles.fileRow}
+                        onPress={() => handleViewDocument(item)}
+                      >
+                        <Image source={icon} style={styles.fileIcon} />
+                        <View style={styles.fileInfo}>
+                          <Text style={styles.fileName} numberOfLines={1}>
+                            {item.name}
+                          </Text>
+                          <View style={styles.fileMetaRow}>
+                            <Text style={styles.fileSource}>{item.source}</Text>
+                            <Text style={styles.fileDot}> · </Text>
+                            <Text style={styles.fileTime}>{formatRelativeTime(item.uploadedAt)}</Text>
+                          </View>
                         </View>
-                      </View>
-                      <TouchableOpacity onPress={() => handleOpenMenu(item)} style={styles.menuBtn}>
-                        <Ionicons name="ellipsis-vertical" size={20} color="#6b7280" />
+                        <TouchableOpacity
+                          onPress={() => handleOpenMenu(item)}
+                          style={styles.menuBtn}
+                          activeOpacity={0.7}
+                        >
+                          <Ionicons name="ellipsis-vertical" size={20} color="#6b7280" />
+                        </TouchableOpacity>
                       </TouchableOpacity>
-                    </View>
-                  );
-                }}
-                ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
-              />
-            )}
-            <TouchableOpacity onPress={() => setSeeMoreVisible(false)} style={styles.closeMenuBtn}>
-              <Text style={{ color: "white", fontWeight: "700" }}>Close</Text>
+                    );
+                  }}
+                  ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
+                />
+              )}
+              <TouchableOpacity onPress={() => setSeeMoreVisible(false)} style={styles.closeMenuBtn}>
+                <Text style={{ color: "white", fontWeight: "700" }}>Close</Text>
+              </TouchableOpacity>
             </TouchableOpacity>
           </View>
         </TouchableOpacity>
+      </Modal>
+      <Modal visible={isLoading} animationType="fade" transparent>
+        <View style={styles.loadingOverlay}>
+          <LottieView
+            source={loadingLottie}
+            autoPlay
+            loop
+            style={{ width: 150, height: 150 }}
+          />
+        </View>
       </Modal>
     </SafeAreaView>
   );
@@ -629,14 +620,13 @@ const styles = StyleSheet.create({
   errorCloseBtn: {
     padding: 8,
   },
-  modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "flex-end" },
+  modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.4)" },
   modalContent: {
     backgroundColor: "white",
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     padding: 20,
     paddingBottom: 40,
-    maxHeight: "80%",
   },
   modalHeader: {
     backgroundColor: "#fff",
@@ -673,5 +663,11 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
+  },
+  loadingOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.1)",
+    justifyContent: "center",
+    alignItems: "center",
   },
 });

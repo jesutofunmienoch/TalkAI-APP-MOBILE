@@ -9,7 +9,10 @@
     },
     "moduleResolution": "bundler",
     "skipLibCheck": true,
-    "allowSyntheticDefaultImports": true
+    "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true,
+    "lib": ["esnext", "dom"],
+    "types": ["react", "react-native", "expo"]
   },
   "include": [
     "**/*.ts",

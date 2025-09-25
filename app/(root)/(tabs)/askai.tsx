@@ -1,3 +1,4 @@
+// app/(root)/(tabs)/askai.tsx
 import React, { useRef, useState } from "react";
 import {
   View,

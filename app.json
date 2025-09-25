@@ -14,9 +14,11 @@
       "backgroundColor": "#2F80ED"
     },
     "ios": {
+      "bundleIdentifier": "com.enoch.ubermain",
       "supportsTablet": true
     },
     "android": {
+      "package": "com.enoch.ubermain",
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff"

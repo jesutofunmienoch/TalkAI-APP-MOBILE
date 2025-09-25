@@ -1,12 +1,11 @@
 import React, { useEffect, useContext, useState, useRef } from "react";
 import { View, Text, Animated, StyleSheet, TouchableOpacity } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { router, useLocalSearchParams } from "expo-router";
-import * as DocumentPicker from "expo-document-picker";
+import { useLocalSearchParams } from "expo-router";
 import LottieView from "lottie-react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { DocumentContext, DocItem } from "../../../context/DocumentContext";
-import { useAuth, useUser } from "@clerk/clerk-expo";
+import { DocumentContext } from "../../../context/DocumentContext";
+import { useUser, useAuth } from "@clerk/clerk-expo"; // Add useAuth
 import { uploadDocument } from "../../../lib/appwrite";
 
 const Upload = () => {
@@ -14,8 +13,8 @@ const Upload = () => {
   const { errorMsg: initialErrorMsg } = useLocalSearchParams<{ errorMsg?: string }>();
   const [errorMsg, setErrorMsg] = useState<string>(initialErrorMsg || "");
   const errorAnim = useRef(new Animated.Value(-100)).current;
-  const { getToken } = useAuth();
   const { user } = useUser();
+  const { getToken } = useAuth(); // Add getToken
   const notFoundLottie = require("../../../assets/images/not-found.json");
 
   useEffect(() => {
@@ -35,7 +34,7 @@ const Upload = () => {
   }, [errorMsg]);
 
   const pickDocument = () =>
-    uploadDocument(getToken, user, setDocuments, (errorMsg: string) => setErrorMsg(errorMsg));
+    uploadDocument(user, setDocuments, (errorMsg: string) => setErrorMsg(errorMsg), getToken); // Pass getToken
 
   return (
     <SafeAreaView style={styles.safe}>

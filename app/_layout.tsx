@@ -7,7 +7,7 @@ import "react-native-reanimated";
 import { LogBox } from "react-native";
 import "../styles/global.css";
 import { tokenCache } from "@/lib/auth";
-import { DocumentContext, DocumentProvider, DocItem } from "../context/DocumentContext";
+import { DocumentProvider } from "../context/DocumentContext";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 SplashScreen.preventAutoHideAsync();
@@ -33,8 +33,6 @@ export default function RootLayout() {
     "Jakarta-SemiBold": require("../assets/fonts/PlusJakartaSans-SemiBold.ttf"),
   });
 
-  const [documents, setDocuments] = useState<DocItem[]>([]);
-
   useEffect(() => {
     if (loaded) {
       SplashScreen.hideAsync();
@@ -46,19 +44,20 @@ export default function RootLayout() {
   }
 
   return (
-    <DocumentContext.Provider value={{ documents, setDocuments }}>
-      <ClerkProvider tokenCache={tokenCache} publishableKey={publishableKey}>
-        <ClerkLoaded>
-          <SafeAreaProvider>
+    <ClerkProvider tokenCache={tokenCache} publishableKey={publishableKey}>
+      <ClerkLoaded>
+        <SafeAreaProvider>
+          <DocumentProvider>
             <Stack>
               <Stack.Screen name="index" options={{ headerShown: false }} />
               <Stack.Screen name="(auth)" options={{ headerShown: false }} />
               <Stack.Screen name="(root)" options={{ headerShown: false }} />
+              <Stack.Screen name="(root)/document-view" options={{ headerShown: false }} />
               <Stack.Screen name="+not-found" />
             </Stack>
-          </SafeAreaProvider>
-        </ClerkLoaded>
-      </ClerkProvider>
-    </DocumentContext.Provider>
+          </DocumentProvider>
+        </SafeAreaProvider>
+      </ClerkLoaded>
+    </ClerkProvider>
   );
 }
