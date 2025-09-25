@@ -1,14 +1,14 @@
-import { 
-  Client, 
-  Databases, 
-  Storage, 
-  ID, 
-  Permission, 
-  Role, 
-  Account, 
-  Query, 
-  Functions 
-} from "react-native-appwrite";
+// lib/appwrite.ts
+import {
+  Client,
+  Databases,
+  Storage,
+  ID,
+  Permission,
+  Role,
+  Account,
+  Query,
+} from "react-native-appwrite";  // Remove Functions import
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as DocumentPicker from "expo-document-picker";
 import { router } from "expo-router";
@@ -24,7 +24,6 @@ export const client = new Client()
 export const account = new Account(client);
 export const databases = new Databases(client);
 export const storage = new Storage(client);
-export const functions = new Functions(client);
 
 export const appwriteConfig = {
   databaseId: process.env.EXPO_PUBLIC_APPWRITE_DATABASE_ID!,
@@ -33,10 +32,20 @@ export const appwriteConfig = {
 };
 
 // 🔹 Clerk <-> Appwrite bridge
-const CLERK_AUTH_FUNCTION_ID = process.env.EXPO_PUBLIC_APPWRITE_CLERK_AUTH_FUNCTION_ID!;
-const ALLOWED_EXTS = ["pdf", "doc", "docx", "ppt", "pptx", "xls", "xlsx", "csv"];
+const CLERK_AUTH_FUNCTION_ID =
+  process.env.EXPO_PUBLIC_APPWRITE_CLERK_AUTH_FUNCTION_ID!;
+const ALLOWED_EXTS = [
+  "pdf",
+  "doc",
+  "docx",
+  "ppt",
+  "pptx",
+  "xls",
+  "xlsx",
+  "csv",
+];
 
-// 🔹 Upload logic
+// 🔹 Upload document
 export const uploadDocument = async (
   user: any,
   setDocuments: React.Dispatch<React.SetStateAction<DocItem[]>>,
@@ -44,7 +53,6 @@ export const uploadDocument = async (
   getToken: (options?: { template: string }) => Promise<string | null>
 ) => {
   try {
-    console.log("Starting upload for user:", user?.id);
     if (!user?.id) throw new Error("User not authenticated");
 
     // ✅ Ensure Appwrite session exists
@@ -53,15 +61,28 @@ export const uploadDocument = async (
     } catch {
       const clerkJwt = await getToken({ template: "appwrite" });
       if (!clerkJwt) throw new Error("Failed to get Clerk token");
+      if (!CLERK_AUTH_FUNCTION_ID)
+        throw new Error("Clerk auth function ID not configured");
 
-      if (!CLERK_AUTH_FUNCTION_ID) throw new Error("Clerk auth function ID not configured");
+      // ✅ Use fetch instead of SDK for execution
+      const endpoint = `${process.env.EXPO_PUBLIC_APPWRITE_ENDPOINT}/v1/functions/${CLERK_AUTH_FUNCTION_ID}/executions`;
+      const fetchResponse = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Appwrite-Project': process.env.EXPO_PUBLIC_APPWRITE_PROJECT_ID!,
+        },
+        body: JSON.stringify({ data: JSON.stringify({ clerkJwt }) }),
+      });
 
-      const execution = await functions.createExecution(
-        CLERK_AUTH_FUNCTION_ID,
-        JSON.stringify({ clerkJwt })
-      );
+      const execution = await fetchResponse.json();
+      console.log('Execution response:', execution);  // For debugging
 
-      const response = JSON.parse(execution.responseBody);
+      if (execution.status !== 'completed') {
+        throw new Error(`Function execution failed with status: ${execution.status}`);
+      }
+
+      const response = JSON.parse(execution.responseBody ?? "{}");
       if (response.error) throw new Error(response.error);
 
       client.setSession(response.secret);
@@ -104,7 +125,12 @@ export const uploadDocument = async (
     const uploaded = await storage.createFile(
       appwriteConfig.bucketId,
       ID.unique(),
-      { uri, name, type: mimeType || `application/${ext}`, size } as any,
+      {
+        uri,
+        name,
+        type: mimeType || `application/${ext}`,
+        size,
+      } as any,
       [
         Permission.read(Role.user(appwriteUserId)),
         Permission.update(Role.user(appwriteUserId)),
@@ -144,10 +170,11 @@ export const uploadDocument = async (
     // ✅ Update state
     setDocuments((prev: DocItem[]) => [newDoc, ...prev]);
     router.navigate("/(root)/(tabs)/home");
-
   } catch (err: any) {
     console.error("Upload error:", err.message, err.stack);
-    navigateOnError(`Could not upload document: ${err.message}. Please try again.`);
+    navigateOnError(
+      `Could not upload document: ${err.message}. Please try again.`
+    );
   }
 };
 

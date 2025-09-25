@@ -1,5 +1,5 @@
 import React, { createContext, useState, useEffect, useContext } from "react";
-import { databases, appwriteConfig, account, client, functions } from "@/lib/appwrite";
+import { databases, appwriteConfig, account, client } from "@/lib/appwrite";  // Remove functions import
 import { Query } from "react-native-appwrite";
 import { useUser, useAuth } from "@clerk/clerk-expo";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -46,39 +46,48 @@ export const DocumentProvider = ({ children }: { children: any }) => {
         setIsLoading(false);
         return;
       }
-
       setIsLoading(true);
-
-      // Sync session
+      // ✅ Sync session
       try {
         await account.get();
       } catch {
         const clerkJwt = await getToken({ template: "appwrite" });
         if (!clerkJwt) throw new Error("Failed to get Clerk token");
-
         const functionId = process.env.EXPO_PUBLIC_APPWRITE_CLERK_AUTH_FUNCTION_ID!;
         if (!functionId) throw new Error("Appwrite clerk auth function ID is not configured");
 
-        const execution = await functions.createExecution(functionId, JSON.stringify({ clerkJwt }));
+        // ✅ Use fetch instead of SDK for execution
+        const endpoint = `${process.env.EXPO_PUBLIC_APPWRITE_ENDPOINT}/v1/functions/${functionId}/executions`;
+        const fetchResponse = await fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Appwrite-Project': process.env.EXPO_PUBLIC_APPWRITE_PROJECT_ID!,
+          },
+          body: JSON.stringify({ data: JSON.stringify({ clerkJwt }) }),
+        });
 
-        const response = JSON.parse(execution.responseBody);
+        const execution = await fetchResponse.json();
+        console.log('Execution response:', execution);  // For debugging
+
+        if (execution.status !== 'completed') {
+          throw new Error(`Function execution failed with status: ${execution.status}`);
+        }
+        const response = JSON.parse(execution.responseBody ?? "{}");
         if (response.error) throw new Error(response.error);
 
         client.setSession(response.secret);
         await AsyncStorage.setItem("appwrite_session", response.secret);
       }
-
-      // Fetch documents
+      // ✅ Fetch documents
       try {
         const appwriteUser = await account.get();
         const appwriteUserId = appwriteUser.$id;
-
         const response = await databases.listDocuments(
           appwriteConfig.databaseId,
           appwriteConfig.collectionId,
           [Query.equal("userId", appwriteUserId), Query.orderDesc("uploadedAt")]
         );
-
         setDocuments(
           response.documents.map((doc) => ({
             id: doc.$id,
@@ -98,10 +107,8 @@ export const DocumentProvider = ({ children }: { children: any }) => {
         setIsLoading(false);
       }
     };
-
     load();
   }, [user, isLoaded, getToken]);
-
   return (
     <DocumentContext.Provider value={{ documents, setDocuments, isLoading }}>
       {children}

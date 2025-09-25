@@ -113,12 +113,7 @@ const Home = () => {
         return;
       }
 
-      const jwt = await getToken({ template: "appwrite" });
-      if (jwt) {
-        databases.client.setJWT(jwt);
-      } else {
-        throw new Error("Failed to retrieve JWT token");
-      }
+      // No need for setJWT; client uses session from sync
 
       await databases.updateDocument(
         appwriteConfig.databaseId,
@@ -146,13 +141,7 @@ const Home = () => {
         return;
       }
 
-      const jwt = await getToken({ template: "appwrite" });
-      if (jwt) {
-        storage.client.setJWT(jwt);
-        databases.client.setJWT(jwt);
-      } else {
-        throw new Error("Failed to retrieve JWT token");
-      }
+      // No need for setJWT; client uses session from sync
 
       await storage.deleteFile(appwriteConfig.bucketId, doc.fileId);
       await databases.deleteDocument(appwriteConfig.databaseId, appwriteConfig.collectionId, doc.id);
