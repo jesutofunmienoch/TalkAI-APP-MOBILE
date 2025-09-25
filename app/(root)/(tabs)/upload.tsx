@@ -4,18 +4,19 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams } from "expo-router";
 import LottieView from "lottie-react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { DocumentContext } from "../../../context/DocumentContext";
-import { useUser, useAuth } from "@clerk/clerk-expo"; // Add useAuth
-import { uploadDocument } from "../../../lib/appwrite";
+import { DocumentContext, DocItem } from "@/context/DocumentContext";
+import { useUser } from "@clerk/clerk-expo";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as FileSystem from "expo-file-system/legacy";
+import * as DocumentPicker from "expo-document-picker";
 
 const Upload = () => {
-  const { setDocuments } = useContext(DocumentContext)!;
+  const { documents, setDocuments } = useContext(DocumentContext)!;
   const { errorMsg: initialErrorMsg } = useLocalSearchParams<{ errorMsg?: string }>();
   const [errorMsg, setErrorMsg] = useState<string>(initialErrorMsg || "");
   const errorAnim = useRef(new Animated.Value(-100)).current;
   const { user } = useUser();
-  const { getToken } = useAuth(); // Add getToken
-  const notFoundLottie = require("../../../assets/images/not-found.json");
+  const notFoundLottie = require("@/assets/images/not-found.json");
 
   useEffect(() => {
     if (errorMsg) {
@@ -33,8 +34,17 @@ const Upload = () => {
     }
   }, [errorMsg]);
 
+  const saveDocs = async (docs: DocItem[]) => {
+    if (!user?.id) return;
+    const key = `documents_${user.id}`;
+    await AsyncStorage.setItem(key, JSON.stringify(docs));
+  };
+
   const pickDocument = () =>
-    uploadDocument(user, setDocuments, (errorMsg: string) => setErrorMsg(errorMsg), getToken); // Pass getToken
+    uploadDocument(user, documents, setDocuments, (errorMsg: string) => {
+      setErrorMsg(errorMsg);
+      setTimeout(() => setErrorMsg(""), 2000);
+    }, saveDocs);
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -42,7 +52,7 @@ const Upload = () => {
         <View style={styles.uploadCard}>
           <LottieView source={notFoundLottie} autoPlay loop style={styles.lottie} />
           <Text style={styles.uploadTitle}>Upload a Document</Text>
-          <Text style={styles.uploadSubtitle}>Something went wrong, please try again.</Text>
+          <Text style={styles.uploadSubtitle}>Start keeping track of your documents by uploading one.</Text>
           <TouchableOpacity onPress={pickDocument} style={styles.uploadBtn}>
             <Ionicons name="cloud-upload-outline" size={18} color="#fff" />
             <Text style={styles.uploadBtnText}>Upload a Document</Text>
@@ -70,6 +80,63 @@ const Upload = () => {
       )}
     </SafeAreaView>
   );
+};
+
+const uploadDocument = async (
+  user: any,
+  documents: DocItem[],
+  setDocuments: (docs: DocItem[]) => void,
+  onError: (msg: string) => void,
+  saveDocs: (docs: DocItem[]) => Promise<void>
+) => {
+  const ALLOWED_EXTS = ["pdf", "doc", "docx", "ppt", "pptx", "xls", "xlsx", "csv"];
+
+  if (!user?.id) {
+    onError("User not authenticated. Please log in.");
+    return;
+  }
+
+  try {
+    const result = await DocumentPicker.getDocumentAsync({});
+    if (result.canceled) return;
+
+    const { uri, name } = result.assets[0];
+    const ext = name.split(".").pop()?.toLowerCase() || "";
+
+    if (!ALLOWED_EXTS.includes(ext)) {
+      onError("Unsupported file type.");
+      return;
+    }
+
+    const localDir = `${FileSystem.documentDirectory}documents/${user.id}/`;
+    const dirInfo = await FileSystem.getInfoAsync(localDir);
+    if (!dirInfo.exists) {
+      await FileSystem.makeDirectoryAsync(localDir, { intermediates: true });
+    }
+
+    const fileId = Date.now().toString();
+    const localUri = `${localDir}${fileId}.${ext}`;
+
+    await FileSystem.copyAsync({ from: uri, to: localUri });
+
+    const newDoc = {
+      fileId,
+      userId: user.id,
+      name,
+      ext,
+      favorite: false,
+      source: "Device",
+      uploadedAt: Date.now(),
+      localUri,
+    } as unknown as DocItem;
+
+    const updated = [...documents, newDoc];
+    setDocuments(updated);
+    await saveDocs(updated);
+  } catch (e) {
+    console.error(e);
+    onError("Failed to upload document.");
+  }
 };
 
 export default Upload;

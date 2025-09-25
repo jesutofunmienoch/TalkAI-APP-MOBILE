@@ -19,11 +19,11 @@ import LottieView from "lottie-react-native";
 import { Ionicons, MaterialIcons, Feather } from "@expo/vector-icons";
 import { icons } from "@/constants";
 import { DocumentContext, DocItem } from "@/context/DocumentContext";
-import { databases, storage, appwriteConfig, Permission, Role, account } from "@/lib/appwrite";
 import { useUser, useAuth } from "@clerk/clerk-expo";
 import { router } from "expo-router";
-import { uploadDocument } from "@/lib/appwrite";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { Directory, File, Paths } from 'expo-file-system'; // Updated import
+import * as DocumentPicker from 'expo-document-picker';
 
 const { width, height } = Dimensions.get("window");
 
@@ -39,7 +39,7 @@ const ALLOWED_EXTS = ["pdf", "doc", "docx", "ppt", "pptx", "xls", "xlsx", "csv"]
 
 const Home = () => {
   const { user, isLoaded } = useUser();
-  const { signOut, getToken } = useAuth();
+  const { signOut } = useAuth();
   const { documents, setDocuments } = useContext(DocumentContext)!;
   const [searchQuery, setSearchQuery] = useState("");
   const [seeMoreSearchQuery, setSeeMoreSearchQuery] = useState("");
@@ -49,7 +49,7 @@ const Home = () => {
   const [errorMsg, setErrorMsg] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const errorAnim = useRef(new Animated.Value(-100)).current;
-  const headerLottie = require("@/assets/images/learning.json");
+  const headerLottie = require("@/assets/images/others.json");
   const noDataLottie = require("@/assets/images/No-Data.json");
   const loadingLottie = require("@/assets/images/loading.json");
 
@@ -68,6 +68,36 @@ const Home = () => {
       }).start();
     }
   }, [errorMsg]);
+
+  useEffect(() => {
+    const loadDocs = async () => {
+      if (!user?.id) return;
+      const key = `documents_${user.id}`;
+      try {
+        const stored = await AsyncStorage.getItem(key);
+        if (stored) {
+          setDocuments(JSON.parse(stored));
+        } else {
+          setDocuments([]);
+        }
+      } catch (e) {
+        console.error('Failed to load documents:', e);
+        setErrorMsg('Failed to load documents. Please try again.');
+        setTimeout(() => setErrorMsg(''), 2000);
+      }
+    };
+    loadDocs();
+  }, [user]);
+
+  const saveDocs = async (docs: DocItem[]) => {
+    if (!user?.id) return;
+    const key = `documents_${user.id}`;
+    try {
+      await AsyncStorage.setItem(key, JSON.stringify(docs));
+    } catch (e) {
+      console.error('Failed to save documents:', e);
+    }
+  };
 
   const getExt = (filename: string) => {
     if (!filename) return "";
@@ -96,12 +126,13 @@ const Home = () => {
   const handlePickDocument = () => {
     uploadDocument(
       user,
+      documents,
       setDocuments,
       (errorMsg) => {
         setErrorMsg(errorMsg);
         setTimeout(() => setErrorMsg(""), 2000);
       },
-      getToken
+      saveDocs
     );
   };
 
@@ -113,19 +144,9 @@ const Home = () => {
         return;
       }
 
-      // No need for setJWT; client uses session from sync
-
-      await databases.updateDocument(
-        appwriteConfig.databaseId,
-        appwriteConfig.collectionId,
-        doc.id,
-        { favorite: value },
-        [Permission.update(Role.user(user.id))]
-      );
-
-      setDocuments((prev: DocItem[]) =>
-        prev.map((d: DocItem) => (d.id === doc.id ? { ...d, favorite: value } : d))
-      );
+      const updated = documents.map((d: DocItem) => (d.fileId === doc.fileId ? { ...d, favorite: value } : d));
+      setDocuments(updated);
+      await saveDocs(updated);
     } catch (error: any) {
       console.error("Toggle favorite error:", error.message);
       setErrorMsg("Could not update favorite status. Please try again.");
@@ -141,12 +162,14 @@ const Home = () => {
         return;
       }
 
-      // No need for setJWT; client uses session from sync
+      if (doc.localUri) {
+        const file = new File(doc.localUri);
+        await file.delete();
+      }
 
-      await storage.deleteFile(appwriteConfig.bucketId, doc.fileId);
-      await databases.deleteDocument(appwriteConfig.databaseId, appwriteConfig.collectionId, doc.id);
-
-      setDocuments((prev: DocItem[]) => prev.filter((d: DocItem) => d.id !== doc.id));
+      const updated = documents.filter((d: DocItem) => d.fileId !== doc.fileId);
+      setDocuments(updated);
+      await saveDocs(updated);
       setMenuVisible(false);
     } catch (error: any) {
       console.error("Delete document error:", error.message);
@@ -163,21 +186,18 @@ const Home = () => {
   const handleViewDocument = (doc: DocItem) => {
     setIsLoading(true);
     router.push({
-      pathname: "/(root)/document-view" as const,
-      params: { docId: doc.id },
+      pathname: "/(root)/document-view" as const, // Or change to "/document-view" if not in (root)
+      params: { docId: doc.fileId },
     });
     setIsLoading(false);
   };
 
   const handleSignOut = async () => {
     try {
-      await account.deleteSession('current');
-      await AsyncStorage.removeItem("appwrite_session");
-      // Clear any client session set directly
-      try { account.client.setSession?.(""); } catch {}
       await signOut();
+      setDocuments([]);
       router.replace("/(auth)/sign-in");
-    } catch {
+    } catch (error) {
       alert("Error signing out. Please try again.");
     }
   };
@@ -256,7 +276,7 @@ const Home = () => {
             <>
               <FlatList
                 data={filteredNonFavorites}
-                keyExtractor={(item: DocItem) => item.id}
+                keyExtractor={(item: DocItem) => item.fileId}
                 renderItem={({ item }: { item: DocItem }) => {
                   const icon = mapExtToIcon(item.ext);
                   return (
@@ -297,7 +317,7 @@ const Home = () => {
                   <Text style={styles.sectionTitle}>Favorites</Text>
                   {filteredFavorites.map((item: DocItem) => (
                     <TouchableOpacity
-                      key={item.id}
+                      key={item.fileId}
                       style={styles.fileRow}
                       onPress={() => handleViewDocument(item)}
                     >
@@ -446,7 +466,7 @@ const Home = () => {
               ) : (
                 <FlatList
                   data={filteredAllDocuments}
-                  keyExtractor={(item: DocItem) => item.id}
+                  keyExtractor={(item: DocItem) => item.fileId}
                   renderItem={({ item }: { item: DocItem }) => {
                     const icon = mapExtToIcon(item.ext);
                     return (
@@ -497,6 +517,55 @@ const Home = () => {
       </Modal>
     </SafeAreaView>
   );
+};
+
+const uploadDocument = async (user: any, documents: DocItem[], setDocuments: (docs: DocItem[]) => void, onError: (msg: string) => void, saveDocs: (docs: DocItem[]) => Promise<void>) => {
+  if (!user?.id) {
+    onError("User not authenticated. Please log in.");
+    return;
+  }
+
+  try {
+    const result = await DocumentPicker.getDocumentAsync({});
+    if (result.canceled) return;
+
+    const { uri, name } = result.assets[0];
+    const ext = name.split('.').pop()?.toLowerCase() || '';
+
+    if (!ALLOWED_EXTS.includes(ext)) {
+      onError("Unsupported file type.");
+      return;
+    }
+
+    // New API
+    const baseDir = new Directory(Paths.document);
+    const localDir = new Directory(baseDir.uri + `documents/${user.id}/`);
+    await localDir.create({ intermediates: true });
+
+    const fileId = Date.now().toString();
+    const localFile = new File(localDir.uri + `${fileId}.${ext}`);
+
+    const sourceFile = new File(uri);
+    await sourceFile.copy(localFile);
+
+    const newDoc = {
+      fileId,
+      userId: user.id,
+      name,
+      ext,
+      favorite: false,
+      source: 'Device',
+      uploadedAt: Date.now(),
+      localUri: localFile.uri,
+    } as unknown as DocItem;
+
+    const updated = [...documents, newDoc];
+    setDocuments(updated);
+    await saveDocs(updated);
+  } catch (e) {
+    console.error(e);
+    onError("Failed to upload document.");
+  }
 };
 
 export default Home;

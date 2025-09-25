@@ -1,8 +1,15 @@
 import React, { useContext, useEffect, useState } from "react";
-import { Text, View, StyleSheet, Dimensions, TouchableOpacity, ScrollView } from "react-native";
+import {
+  Text,
+  View,
+  StyleSheet,
+  Dimensions,
+  TouchableOpacity,
+  ScrollView,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { LinearGradient } from "expo-linear-gradient";
 import LottieView from "lottie-react-native";
+import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import { DocumentContext, DocItem } from "@/context/DocumentContext";
 import { useLocalSearchParams, router } from "expo-router";
@@ -16,13 +23,13 @@ const { width } = Dimensions.get("window");
 
 const DocumentView = () => {
   const { documents } = useContext(DocumentContext)!;
-  const { docId } = useLocalSearchParams();
+  const { docId } = useLocalSearchParams<{ docId: string }>();
   const [document, setDocument] = useState<DocItem | null>(null);
-  const [activeTab, setActiveTab] = useState("askai");
-  const headerLottie = require("@/assets/images/learning.json");
+  const [activeTab, setActiveTab] = useState("note"); // Default tab
+  const headerLottie = require("@/assets/images/askai.json");
 
   useEffect(() => {
-    const doc = documents.find((d: DocItem) => d.id === docId);
+    const doc = documents.find((d: DocItem) => d.fileId === docId);
     if (doc) {
       setDocument(doc);
     } else {
@@ -47,12 +54,24 @@ const DocumentView = () => {
         <ScrollView
           style={{ flex: 1 }}
           contentContainerStyle={{
-            paddingBottom: 20,
+            paddingBottom: activeTab === "askai" ? 120 : 40,
           }}
         >
+          {/* Header */}
           <View style={styles.header}>
-            <LottieView source={headerLottie} autoPlay loop style={{ width, height: 250 }} />
-            <LinearGradient colors={["transparent", "#f8fafc"]} style={styles.gradient} />
+            <LottieView
+              source={headerLottie}
+              autoPlay
+              loop
+              style={{ width, height: 250 }}
+            />
+
+            {/* ✅ Gradient overlay just like SignIn */}
+            <LinearGradient
+              colors={["transparent", "#f8fafc"]}
+              style={styles.gradient}
+            />
+
             <View style={styles.headerTextWrap}>
               <Text style={styles.title} numberOfLines={1}>
                 {document.name}
@@ -64,22 +83,32 @@ const DocumentView = () => {
             <View style={styles.fileMetaRow}>
               <Text style={styles.fileSource}>{document.source}</Text>
               <Text style={styles.fileDot}> · </Text>
-              <Text style={styles.fileTime}>{new Date(document.uploadedAt).toLocaleDateString()}</Text>
+              <Text style={styles.fileTime}>
+                {new Date(document.uploadedAt).toLocaleDateString()}
+              </Text>
             </View>
             <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
               <Ionicons name="arrow-back" size={24} color="#111827" />
             </TouchableOpacity>
           </View>
+
+          {/* Navigation + Tab Content */}
           <View style={styles.container}>
             <DocNav activeTab={activeTab} setActiveTab={setActiveTab} />
             <View style={{ marginTop: 20 }}>
-              {activeTab === "askai" && <AskAI />}
               {activeTab === "note" && <Note />}
               {activeTab === "summary" && <Summary />}
               {activeTab === "settings" && <Settings />}
             </View>
           </View>
         </ScrollView>
+
+        {/* AskAI fixed at bottom ONLY when AskAI tab is active */}
+        {activeTab === "askai" && (
+          <View style={styles.askAIContainer}>
+            <AskAI />
+          </View>
+        )}
       </View>
     </SafeAreaView>
   );
@@ -88,10 +117,21 @@ const DocumentView = () => {
 export default DocumentView;
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: "#f8fafc" },
+  safe: { flex: 1, backgroundColor: "#fff" },
   container: { paddingHorizontal: 20, marginTop: -40 },
-  header: { position: "relative", width: "100%", height: 250, backgroundColor: "#f8fafc" },
-  gradient: { position: "absolute", bottom: 0, left: 0, right: 0, height: 180 },
+  header: {
+    position: "relative",
+    width: "100%",
+    height: 250,
+    backgroundColor: "#f8fafc",
+  },
+  gradient: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 120, // same fade height as sign-in
+  },
   headerTextWrap: {
     position: "absolute",
     bottom: 72,
@@ -101,7 +141,13 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
   },
-  title: { fontSize: 18, fontWeight: "700", color: "#111827", flex: 1, marginRight: 10 },
+  title: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#111827",
+    flex: 1,
+    marginRight: 10,
+  },
   moreBtn: {
     width: 32,
     height: 32,
@@ -130,4 +176,12 @@ const styles = StyleSheet.create({
   },
   loadingBox: { flex: 1, alignItems: "center", justifyContent: "center" },
   loadingText: { color: "#374151", fontSize: 16 },
+  askAIContainer: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: "#fff",
+    paddingBottom: 12,
+  },
 });

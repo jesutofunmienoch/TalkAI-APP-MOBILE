@@ -5,9 +5,11 @@ import { LinearGradient } from "expo-linear-gradient";
 import { icons } from "@/constants";
 import { router } from "expo-router";
 import { useContext } from "react";
-import { DocumentContext, DocItem } from "../../../context/DocumentContext";
-import { useUser, useAuth } from "@clerk/clerk-expo";
-import { uploadDocument } from "../../../lib/appwrite";
+import { DocumentContext, DocItem } from "@/context/DocumentContext";
+import { useUser } from "@clerk/clerk-expo";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as FileSystem from "expo-file-system/legacy";
+import * as DocumentPicker from "expo-document-picker";
 
 interface IconsMap {
   [key: string]: any;
@@ -19,66 +21,39 @@ interface IconsMap {
 }
 
 export default function Layout() {
-  const { setDocuments } = useContext(DocumentContext)!;
+  const { documents, setDocuments } = useContext(DocumentContext)!;
   const { user } = useUser();
-  const { getToken } = useAuth();
+
+  const saveDocs = async (docs: DocItem[]) => {
+    if (!user?.id) return;
+    const key = `documents_${user.id}`;
+    await AsyncStorage.setItem(key, JSON.stringify(docs));
+  };
 
   const handleUpload = () =>
     uploadDocument(
       user,
+      documents,
       setDocuments,
       (errorMsg) =>
         router.navigate({
           pathname: "/(root)/(tabs)/upload",
           params: { errorMsg },
         }),
-      getToken
+      saveDocs
     );
 
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: "#22C55E",
-        tabBarInactiveTintColor: "#9CA3AF",
-        tabBarStyle: {
-          backgroundColor: Platform.OS === "ios" ? "rgba(255, 255, 255, 0.3)" : "rgba(255, 255, 255, 0.9)",
-          borderTopWidth: 0,
-          borderRadius: 20,
-          marginHorizontal: 16,
-          marginBottom: 16,
-          height: 70,
-          shadowColor: "#000",
-          shadowOffset: { width: 0, height: 2 },
-          shadowOpacity: 0.2,
-          shadowRadius: 8,
-          elevation: 10,
-          overflow: "hidden",
-          justifyContent: "center",
-          alignItems: "center",
-          ...(Platform.OS === "web"
-            ? {
-                backdropFilter: "blur(10px)",
-                WebkitBackdropFilter: "blur(10px)",
-              }
-            : {}),
-        },
-        tabBarItemStyle: {
-          justifyContent: "center",
-          alignItems: "center",
-          paddingVertical: 4,
-        },
-        tabBarLabelStyle: {
-          fontSize: 12,
-          fontWeight: "500",
-          marginTop: 2,
-        },
       }}
       tabBar={(props: BottomTabBarProps) => {
         const { state, descriptors, navigation } = props;
         if (state.index === 1 || state.index === 4) {
           return null;
         }
+
         const iconsMap: IconsMap = {
           home: icons.home,
           askai: icons.list,
@@ -86,27 +61,29 @@ export default function Layout() {
           profile: icons.profile,
           chat: icons.chat,
         };
+
         return (
           <View
             style={{
               flexDirection: "row",
-              backgroundColor: Platform.OS === "ios" ? "rgba(255, 255, 255, 0.3)" : "rgba(255, 255, 255, 0.9)",
-              borderRadius: 20,
-              marginHorizontal: 16,
-              marginBottom: 16,
+              backgroundColor:
+                Platform.OS === "ios"
+                  ? "rgba(255,255,255,0.3)"
+                  : "rgba(255,255,255,0.9)",
               height: 70,
               shadowColor: "#000",
               shadowOffset: { width: 0, height: 2 },
-              shadowOpacity: 0.2,
-              shadowRadius: 8,
-              elevation: 10,
+              shadowOpacity: 0.1,
+              shadowRadius: 6,
+              elevation: 6,
               overflow: "hidden",
-              justifyContent: "space-around",
-              alignItems: "center",
+              marginHorizontal: 0,
+              marginBottom: 0,
+              borderRadius: 0,
               ...(Platform.OS === "web"
                 ? {
-                    backdropFilter: "blur(10px)",
-                    WebkitBackdropFilter: "blur(10px)",
+                    backdropFilter: "blur(12px)",
+                    WebkitBackdropFilter: "blur(12px)",
                   }
                 : {}),
             }}
@@ -114,6 +91,7 @@ export default function Layout() {
             {state.routes.map((route, index) => {
               const { options } = descriptors[route.key];
               const isFocused = state.index === index;
+
               const onPress = () => {
                 const event = navigation.emit({
                   type: "tabPress",
@@ -128,17 +106,16 @@ export default function Layout() {
                   }
                 }
               };
+
               if (route.name === "upload") {
                 return (
                   <TouchableOpacity
                     key={route.key}
                     onPress={handleUpload}
                     style={{
+                      flex: 1,
                       justifyContent: "center",
                       alignItems: "center",
-                      width: 60,
-                      height: 60,
-                      marginHorizontal: 8,
                     }}
                   >
                     <LinearGradient
@@ -146,8 +123,10 @@ export default function Layout() {
                       start={{ x: 0, y: 0 }}
                       end={{ x: 1, y: 0 }}
                       style={{
-                        borderRadius: 30,
+                        borderRadius: 50,
                         padding: 2,
+                        width: 58,
+                        height: 58,
                         justifyContent: "center",
                         alignItems: "center",
                       }}
@@ -155,9 +134,9 @@ export default function Layout() {
                       <View
                         style={{
                           backgroundColor: "white",
-                          borderRadius: 27,
-                          width: 54,
-                          height: 54,
+                          borderRadius: 50,
+                          width: 52,
+                          height: 52,
                           justifyContent: "center",
                           alignItems: "center",
                         }}
@@ -165,9 +144,9 @@ export default function Layout() {
                         <Image
                           source={iconsMap[route.name]}
                           style={{
-                            width: 30,
-                            height: 30,
-                            tintColor: "#22C55E",
+                            width: 28,
+                            height: 28,
+                            tintColor: "#3B82F6",
                           }}
                         />
                       </View>
@@ -175,6 +154,7 @@ export default function Layout() {
                   </TouchableOpacity>
                 );
               }
+
               return (
                 <TouchableOpacity
                   key={route.key}
@@ -183,27 +163,62 @@ export default function Layout() {
                     flex: 1,
                     justifyContent: "center",
                     alignItems: "center",
-                    paddingVertical: 4,
                   }}
+                  activeOpacity={0.8}
                 >
-                  <Image
-                    source={iconsMap[route.name]}
-                    style={{
-                      width: 24,
-                      height: 24,
-                      tintColor: isFocused ? "#11BD50" : "#9CA3AF",
-                    }}
-                  />
-                  <Text
-                    style={{
-                      fontSize: 12,
-                      fontWeight: "500",
-                      marginTop: 2,
-                      color: isFocused ? "#11BD50" : "#9CA3AF",
-                    }}
-                  >
-                    {options.title}
-                  </Text>
+                  {isFocused ? (
+                    <View
+                      style={{
+                        backgroundColor: "#111827",
+                        borderRadius: 10,
+                        paddingVertical: 6,
+                        paddingHorizontal: 10,
+                        alignItems: "center",
+                        justifyContent: "center",
+                        width: "90%",
+                      }}
+                    >
+                      <Image
+                        source={iconsMap[route.name]}
+                        style={{
+                          width: 22,
+                          height: 22,
+                          tintColor: "#fff",
+                          marginBottom: 2,
+                        }}
+                      />
+                      <Text
+                        style={{
+                          fontSize: 12,
+                          fontWeight: "600",
+                          color: "#fff",
+                        }}
+                      >
+                        {options.title}
+                      </Text>
+                    </View>
+                  ) : (
+                    <>
+                      <Image
+                        source={iconsMap[route.name]}
+                        style={{
+                          width: 22,
+                          height: 22,
+                          tintColor: "#9CA3AF",
+                          marginBottom: 2,
+                        }}
+                      />
+                      <Text
+                        style={{
+                          fontSize: 12,
+                          fontWeight: "500",
+                          color: "#9CA3AF",
+                        }}
+                      >
+                        {options.title}
+                      </Text>
+                    </>
+                  )}
                 </TouchableOpacity>
               );
             })}
@@ -225,3 +240,60 @@ export default function Layout() {
     </Tabs>
   );
 }
+
+const uploadDocument = async (
+  user: any,
+  documents: DocItem[],
+  setDocuments: (docs: DocItem[]) => void,
+  onError: (msg: string) => void,
+  saveDocs: (docs: DocItem[]) => Promise<void>
+) => {
+  const ALLOWED_EXTS = ["pdf", "doc", "docx", "ppt", "pptx", "xls", "xlsx", "csv"];
+
+  if (!user?.id) {
+    onError("User not authenticated. Please log in.");
+    return;
+  }
+
+  try {
+    const result = await DocumentPicker.getDocumentAsync({});
+    if (result.canceled) return;
+
+    const { uri, name } = result.assets[0];
+    const ext = name.split(".").pop()?.toLowerCase() || "";
+
+    if (!ALLOWED_EXTS.includes(ext)) {
+      onError("Unsupported file type.");
+      return;
+    }
+
+    const localDir = `${FileSystem.documentDirectory}documents/${user.id}/`;
+    const dirInfo = await FileSystem.getInfoAsync(localDir);
+    if (!dirInfo.exists) {
+      await FileSystem.makeDirectoryAsync(localDir, { intermediates: true });
+    }
+
+    const fileId = Date.now().toString();
+    const localUri = `${localDir}${fileId}.${ext}`;
+
+    await FileSystem.copyAsync({ from: uri, to: localUri });
+
+    const newDoc = {
+      fileId,
+      userId: user.id,
+      name,
+      ext,
+      favorite: false,
+      source: "Device",
+      uploadedAt: Date.now(),
+      localUri,
+    } as unknown as DocItem;
+
+    const updated = [...documents, newDoc];
+    setDocuments(updated);
+    await saveDocs(updated);
+  } catch (e) {
+    console.error(e);
+    onError("Failed to upload document.");
+  }
+};

@@ -1,4 +1,3 @@
-
 import { Stack } from "expo-router";
 import DocumentView from "@/components/DocumentView";
 

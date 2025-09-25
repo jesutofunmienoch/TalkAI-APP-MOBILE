@@ -1,10 +1,21 @@
 import React, { useEffect, useRef } from "react";
-import { ScrollView, TouchableOpacity, Text, StyleSheet, View, Animated, Platform } from "react-native";
+import {
+  ScrollView,
+  TouchableOpacity,
+  Text,
+  StyleSheet,
+  View,
+  Animated,
+  Platform,
+} from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 
-// Define a type for the valid Ionicons names used in this component
-type IconName = "sparkles-outline" | "create-outline" | "document-text-outline" | "settings-outline";
+type IconName =
+  | "sparkles-outline"
+  | "create-outline"
+  | "document-text-outline"
+  | "settings-outline";
 
 const NAV_ITEMS = [
   { label: "ASKAI", route: "askai", icon: "sparkles-outline" as IconName },
@@ -22,20 +33,16 @@ const DocNav: React.FC<DocNavProps> = ({ activeTab, setActiveTab }) => {
   const scrollBarOpacity = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
-    // Fade out the scrollbar after 3 seconds
     const fadeOut = Animated.timing(scrollBarOpacity, {
       toValue: 0,
       duration: 1000,
-      delay: 3000, // Show for 3 seconds
+      delay: 3000,
       useNativeDriver: true,
     });
-
     fadeOut.start();
-
-    return () => fadeOut.stop(); // Cleanup on unmount
+    return () => fadeOut.stop();
   }, [scrollBarOpacity]);
 
-  // Reset opacity to 1 on scroll to show scrollbar briefly during interaction
   const handleScroll = () => {
     scrollBarOpacity.setValue(1);
     Animated.timing(scrollBarOpacity, {
@@ -50,73 +57,77 @@ const DocNav: React.FC<DocNavProps> = ({ activeTab, setActiveTab }) => {
     <View style={styles.navContainer}>
       <ScrollView
         horizontal
-        showsHorizontalScrollIndicator={true}
+        showsHorizontalScrollIndicator={false}
         onScroll={handleScroll}
-        scrollEventThrottle={16} // Optimize scroll event handling
-        scrollIndicatorInsets={{ bottom: 0, top: 0, left: 0, right: 0 }}
+        scrollEventThrottle={16}
         style={styles.scrollView}
       >
-        {NAV_ITEMS.map((item) => (
-          <TouchableOpacity
-            key={item.route}
-            style={[
-              styles.navItem,
-              item.route === "askai" && styles.askaiNavItem,
-            ]}
-            onPress={() => setActiveTab(item.route)}
-          >
-            {item.route === "askai" ? (
-              <LinearGradient
-                colors={activeTab === "askai" ? ["#22c55e", "#4ade80"] : ["#d1fae5", "#ecfdf5"]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.gradientNav}
-              >
-                <View style={styles.navContent}>
-                  <Ionicons
-                    name={item.icon}
-                    size={16}
-                    color={activeTab === item.route ? "#fff" : "#111827"}
-                    style={styles.icon}
-                  />
-                  <Text
-                    style={[
-                      styles.navText,
-                      activeTab === item.route && styles.navTextActive,
-                    ]}
-                  >
-                    {item.label}
-                  </Text>
+        {NAV_ITEMS.map((item) => {
+          const isActive = activeTab === item.route;
+          const isAskAI = item.route === "askai";
+
+          return (
+            <TouchableOpacity
+              key={item.route}
+              style={styles.navItem}
+              onPress={() => setActiveTab(item.route)}
+              activeOpacity={0.8}
+            >
+              {isAskAI ? (
+                <LinearGradient
+                  colors={
+                    isActive
+                      ? ["#166534", "#22c55e"] // deeper green gradient
+                      : ["#f1f5f9", "#f8fafc"]
+                  }
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={[
+                    styles.gradientNav,
+                    { borderWidth: isActive ? 0 : 1, borderColor: "#e5e7eb" },
+                  ]}
+                >
+                  <View style={styles.navContent}>
+                    <Ionicons
+                      name={item.icon}
+                      size={14}
+                      color={isActive ? "#fff" : "#111827"}
+                      style={styles.icon}
+                    />
+                    <Text style={[styles.navText, isActive && styles.navTextActive]}>
+                      {item.label}
+                    </Text>
+                  </View>
+                </LinearGradient>
+              ) : (
+                <View
+                  style={[
+                    styles.gradientNav,
+                    {
+                      backgroundColor: isActive ? "#111827" : "#f1f5f9",
+                      borderWidth: isActive ? 0 : 1,
+                      borderColor: "#e5e7eb",
+                    },
+                  ]}
+                >
+                  <View style={styles.navContent}>
+                    <Ionicons
+                      name={item.icon}
+                      size={14}
+                      color={isActive ? "#fff" : "#111827"}
+                      style={styles.icon}
+                    />
+                    <Text style={[styles.navText, isActive && styles.navTextActive]}>
+                      {item.label}
+                    </Text>
+                  </View>
                 </View>
-              </LinearGradient>
-            ) : (
-              <View
-                style={[
-                  styles.gradientNav,
-                  activeTab === item.route ? styles.navItemActive : styles.navItemInactive,
-                ]}
-              >
-                <View style={styles.navContent}>
-                  <Ionicons
-                    name={item.icon}
-                    size={16}
-                    color={activeTab === item.route ? "#fff" : "#111827"}
-                    style={styles.icon}
-                  />
-                  <Text
-                    style={[
-                      styles.navText,
-                      activeTab === item.route && styles.navTextActive,
-                    ]}
-                  >
-                    {item.label}
-                  </Text>
-                </View>
-              </View>
-            )}
-          </TouchableOpacity>
-        ))}
-        {/* Custom scrollbar */}
+              )}
+            </TouchableOpacity>
+          );
+        })}
+
+        {/* Sleek animated scrollbar */}
         <Animated.View
           style={[
             styles.scrollBar,
@@ -134,40 +145,30 @@ export default DocNav;
 
 const styles = StyleSheet.create({
   navContainer: {
-    marginTop: 20,
+    marginTop: 16,
     flexDirection: "row",
     position: "relative",
   },
   scrollView: {
-    flexGrow: 0, // Prevent ScrollView from expanding unnecessarily
+    flexGrow: 0,
   },
   navItem: {
-    marginRight: 10,
-    borderRadius: 18,
-  },
-  askaiNavItem: {
-    backgroundColor: "transparent",
+    marginRight: 8,
+    borderRadius: 14,
   },
   gradientNav: {
     flexDirection: "row",
     alignItems: "center",
-    borderRadius: 16,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
   },
   navContent: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "transparent",
-  },
-  navItemActive: {
-    backgroundColor: "#15803d",
-  },
-  navItemInactive: {
-    backgroundColor: "#ecfdf5",
   },
   navText: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: "600",
     color: "#111827",
   },
@@ -175,19 +176,19 @@ const styles = StyleSheet.create({
     color: "#fff",
   },
   icon: {
-    marginRight: 8,
+    marginRight: 6,
   },
   scrollBar: {
     position: "absolute",
-    bottom: -4, // Position below the ScrollView
-    height: 3, // Tiny scrollbar
-    width: "20%", // Short width to indicate scrollability
-    backgroundColor: "#22c55e", // Green to match theme
+    bottom: -6,
+    height: 3,
+    width: "22%",
+    backgroundColor: "#16a34a",
     borderRadius: 2,
     ...Platform.select({
       web: {
         scrollbarWidth: "thin",
-        scrollbarColor: "#22c55e transparent",
+        scrollbarColor: "#16a34a transparent",
       },
     }),
   },

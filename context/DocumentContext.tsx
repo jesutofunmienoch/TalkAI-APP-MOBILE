@@ -13,6 +13,7 @@ export interface DocItem {
   favorite: boolean;
   fileId: string;
   userId: string;
+  localUri?: string; 
 }
 
 interface DocumentContextType {
@@ -56,16 +57,26 @@ export const DocumentProvider = ({ children }: { children: any }) => {
         const functionId = process.env.EXPO_PUBLIC_APPWRITE_CLERK_AUTH_FUNCTION_ID!;
         if (!functionId) throw new Error("Appwrite clerk auth function ID is not configured");
 
-        // ✅ Use fetch instead of SDK for execution
-        const endpoint = `${process.env.EXPO_PUBLIC_APPWRITE_ENDPOINT}/v1/functions/${functionId}/executions`;
+        // ✅ Use fetch instead of SDK for execution (use "body" instead of "data")
+        const endpoint = `${process.env.EXPO_PUBLIC_APPWRITE_ENDPOINT}/functions/${functionId}/executions`;
         const fetchResponse = await fetch(endpoint, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             'X-Appwrite-Project': process.env.EXPO_PUBLIC_APPWRITE_PROJECT_ID!,
           },
-          body: JSON.stringify({ data: JSON.stringify({ clerkJwt }) }),
+          body: JSON.stringify({
+            body: JSON.stringify({ clerkJwt }),
+            method: 'POST',
+            async: false,
+          }),
         });
+
+        if (!fetchResponse.ok) {
+          const errorBody = await fetchResponse.json();
+          console.error('Fetch error response:', errorBody);  // Log full error for debugging
+          throw new Error(`Fetch failed with status ${fetchResponse.status}: ${errorBody.message || 'Unknown error'}`);
+        }
 
         const execution = await fetchResponse.json();
         console.log('Execution response:', execution);  // For debugging
