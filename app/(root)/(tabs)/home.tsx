@@ -12,6 +12,7 @@ import {
   StyleSheet,
   Modal,
   Switch,
+  Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
@@ -21,10 +22,8 @@ import { icons } from "@/constants";
 import { DocumentContext, DocItem } from "@/context/DocumentContext";
 import { useUser, useAuth } from "@clerk/clerk-expo";
 import { router } from "expo-router";
-import AsyncStorage from "@react-native-async-storage/async-storage";
-import * as FileSystem from 'expo-file-system';
-import { Paths } from 'expo-file-system';
 import * as DocumentPicker from 'expo-document-picker';
+import * as FileSystem from 'expo-file-system/legacy';
 
 const { width, height } = Dimensions.get("window");
 
@@ -41,7 +40,7 @@ const ALLOWED_EXTS = ["pdf", "doc", "docx", "ppt", "pptx", "xls", "xlsx", "csv"]
 const Home = () => {
   const { user, isLoaded } = useUser();
   const { signOut } = useAuth();
-  const { documents, setDocuments } = useContext(DocumentContext)!;
+  const { documents, setDocuments, addDocument, updateDocument, deleteDocument } = useContext(DocumentContext)!;
   const [searchQuery, setSearchQuery] = useState("");
   const [seeMoreSearchQuery, setSeeMoreSearchQuery] = useState("");
   const [menuVisible, setMenuVisible] = useState(false);
@@ -70,36 +69,6 @@ const Home = () => {
     }
   }, [errorMsg]);
 
-  useEffect(() => {
-    const loadDocs = async () => {
-      if (!user?.id) return;
-      const key = `documents_${user.id}`;
-      try {
-        const stored = await AsyncStorage.getItem(key);
-        if (stored) {
-          setDocuments(JSON.parse(stored));
-        } else {
-          setDocuments([]);
-        }
-      } catch (e) {
-        console.error('Failed to load documents:', e);
-        setErrorMsg('Failed to load documents. Please try again.');
-        setTimeout(() => setErrorMsg(''), 2000);
-      }
-    };
-    loadDocs();
-  }, [user]);
-
-  const saveDocs = async (docs: DocItem[]) => {
-    if (!user?.id) return;
-    const key = `documents_${user.id}`;
-    try {
-      await AsyncStorage.setItem(key, JSON.stringify(docs));
-    } catch (e) {
-      console.error('Failed to save documents:', e);
-    }
-  };
-
   const getExt = (filename: string) => {
     if (!filename) return "";
     const parts = filename.split(".");
@@ -127,13 +96,11 @@ const Home = () => {
   const handlePickDocument = () => {
     uploadDocument(
       user,
-      documents,
-      setDocuments,
       (errorMsg) => {
         setErrorMsg(errorMsg);
         setTimeout(() => setErrorMsg(""), 2000);
       },
-      saveDocs
+      addDocument
     );
   };
 
@@ -144,10 +111,8 @@ const Home = () => {
         setTimeout(() => setErrorMsg(""), 2000);
         return;
       }
-
-      const updated = documents.map((d: DocItem) => (d.fileId === doc.fileId ? { ...d, favorite: value } : d));
-      setDocuments(updated);
-      await saveDocs(updated);
+      await updateDocument(doc.fileId, { favorite: value });
+      setSelectedDoc({ ...doc, favorite: value });
     } catch (error: any) {
       console.error("Toggle favorite error:", error.message);
       setErrorMsg("Could not update favorite status. Please try again.");
@@ -162,14 +127,10 @@ const Home = () => {
         setTimeout(() => setErrorMsg(""), 2000);
         return;
       }
-
       if (doc.localUri) {
         await FileSystem.deleteAsync(doc.localUri);
       }
-
-      const updated = documents.filter((d: DocItem) => d.fileId !== doc.fileId);
-      setDocuments(updated);
-      await saveDocs(updated);
+      await deleteDocument(doc.fileId);
       setMenuVisible(false);
     } catch (error: any) {
       console.error("Delete document error:", error.message);
@@ -183,13 +144,21 @@ const Home = () => {
     setMenuVisible(true);
   };
 
-  const handleViewDocument = (doc: DocItem) => {
+  const handleViewDocument = async (doc: DocItem) => {
     setIsLoading(true);
-    router.push({
-      pathname: "/document-view" as const,
-      params: { docId: doc.fileId },
-    });
-    setIsLoading(false);
+    try {
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      router.push({
+        pathname: "/document-view" as const,
+        params: { docId: doc.fileId },
+      });
+    } catch (error: any) {
+      console.error("View document error:", error.message);
+      setErrorMsg("Could not open document. Please try again.");
+      setTimeout(() => setErrorMsg(""), 2000);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleSignOut = async () => {
@@ -197,8 +166,9 @@ const Home = () => {
       await signOut();
       setDocuments([]);
       router.replace("/(auth)/sign-in");
-    } catch (error) {
-      alert("Error signing out. Please try again.");
+    } catch (error: any) {
+      console.error("Sign out error:", error);
+      Alert.alert("Error", "Error signing out. Please try again.");
     }
   };
 
@@ -230,6 +200,13 @@ const Home = () => {
           <LottieView source={headerLottie} autoPlay loop style={{ width, height: 250 }} />
           <LinearGradient colors={["transparent", "#f8fafc"]} style={styles.gradient} />
           <View style={styles.headerTextWrap}>
+            <TouchableOpacity
+              style={styles.menuBtnTop}
+              activeOpacity={0.8}
+              onPress={() => router.push("/home-menu")}
+            >
+              <Feather name="menu" size={20} color="#111827" />
+            </TouchableOpacity>
             <Text style={styles.welcome}>Welcome, {displayName}</Text>
             <Text style={styles.sub}>Ready to explore talkai?</Text>
           </View>
@@ -274,37 +251,36 @@ const Home = () => {
             </View>
           ) : (
             <>
-              <FlatList
-                data={filteredNonFavorites}
-                keyExtractor={(item: DocItem) => item.fileId}
-                renderItem={({ item }: { item: DocItem }) => {
-                  const icon = mapExtToIcon(item.ext);
-                  return (
-                    <TouchableOpacity style={styles.fileRow} onPress={() => handleViewDocument(item)}>
-                      <Image source={icon} style={styles.fileIcon} />
-                      <View style={styles.fileInfo}>
-                        <Text style={styles.fileName} numberOfLines={1}>
-                          {item.name}
-                        </Text>
-                        <View style={styles.fileMetaRow}>
-                          <Text style={styles.fileSource}>{item.source}</Text>
-                          <Text style={styles.fileDot}> · </Text>
-                          <Text style={styles.fileTime}>{formatRelativeTime(item.uploadedAt)}</Text>
-                        </View>
+              {filteredNonFavorites.map((item: DocItem, index: number) => {
+                const icon = mapExtToIcon(item.ext);
+                const isLast = index === filteredNonFavorites.length - 1;
+                return (
+                  <TouchableOpacity
+                    key={item.fileId}
+                    style={[styles.fileRow, !isLast && { marginBottom: 10 }]}
+                    onPress={() => handleViewDocument(item)}
+                  >
+                    <Image source={icon} style={styles.fileIcon} />
+                    <View style={styles.fileInfo}>
+                      <Text style={styles.fileName} numberOfLines={1}>
+                        {item.name}
+                      </Text>
+                      <View style={styles.fileMetaRow}>
+                        <Text style={styles.fileSource}>{item.source}</Text>
+                        <Text style={styles.fileDot}> · </Text>
+                        <Text style={styles.fileTime}>{formatRelativeTime(item.uploadedAt)}</Text>
                       </View>
-                      <TouchableOpacity
-                        onPress={() => handleOpenMenu(item)}
-                        style={styles.menuBtn}
-                        activeOpacity={0.7}
-                      >
-                        <Ionicons name="ellipsis-vertical" size={20} color="#6b7280" />
-                      </TouchableOpacity>
+                    </View>
+                    <TouchableOpacity
+                      onPress={() => handleOpenMenu(item)}
+                      style={styles.menuBtn}
+                      activeOpacity={0.7}
+                    >
+                      <Ionicons name="ellipsis-vertical" size={20} color="#6b7280" />
                     </TouchableOpacity>
-                  );
-                }}
-                ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
-                nestedScrollEnabled={true}
-              />
+                  </TouchableOpacity>
+                );
+              })}
               {filteredNonFavorites.length >= 4 && (
                 <TouchableOpacity
                   onPress={() => setSeeMoreVisible(true)}
@@ -316,32 +292,36 @@ const Home = () => {
               {filteredFavorites.length > 0 && (
                 <View style={{ marginTop: 24 }}>
                   <Text style={styles.sectionTitle}>Favorites</Text>
-                  {filteredFavorites.map((item: DocItem) => (
-                    <TouchableOpacity
-                      key={item.fileId}
-                      style={styles.fileRow}
-                      onPress={() => handleViewDocument(item)}
-                    >
-                      <Image source={mapExtToIcon(item.ext)} style={styles.fileIcon} />
-                      <View style={styles.fileInfo}>
-                        <Text style={styles.fileName} numberOfLines={1}>
-                          {item.name}
-                        </Text>
-                        <View style={styles.fileMetaRow}>
-                          <Text style={styles.fileSource}>{item.source}</Text>
-                          <Text style={styles.fileDot}> · </Text>
-                          <Text style={styles.fileTime}>{formatRelativeTime(item.uploadedAt)}</Text>
-                        </View>
-                      </View>
+                  {filteredFavorites.map((item: DocItem, index: number) => {
+                    const icon = mapExtToIcon(item.ext);
+                    const isLast = index === filteredFavorites.length - 1;
+                    return (
                       <TouchableOpacity
-                        onPress={() => handleOpenMenu(item)}
-                        style={styles.menuBtn}
-                        activeOpacity={0.7}
+                        key={item.fileId}
+                        style={[styles.fileRow, !isLast && { marginBottom: 10 }]}
+                        onPress={() => handleViewDocument(item)}
                       >
-                        <Ionicons name="ellipsis-vertical" size={20} color="#6b7280" />
+                        <Image source={icon} style={styles.fileIcon} />
+                        <View style={styles.fileInfo}>
+                          <Text style={styles.fileName} numberOfLines={1}>
+                            {item.name}
+                          </Text>
+                          <View style={styles.fileMetaRow}>
+                            <Text style={styles.fileSource}>{item.source}</Text>
+                            <Text style={styles.fileDot}> · </Text>
+                            <Text style={styles.fileTime}>{formatRelativeTime(item.uploadedAt)}</Text>
+                          </View>
+                        </View>
+                        <TouchableOpacity
+                          onPress={() => handleOpenMenu(item)}
+                          style={styles.menuBtn}
+                          activeOpacity={0.7}
+                        >
+                          <Ionicons name="ellipsis-vertical" size={20} color="#6b7280" />
+                        </TouchableOpacity>
                       </TouchableOpacity>
-                    </TouchableOpacity>
-                  ))}
+                    );
+                  })}
                 </View>
               )}
             </>
@@ -391,12 +371,8 @@ const Home = () => {
                 </View>
               )}
               <View style={styles.menuOption}>
-                <MaterialIcons name="picture-as-pdf" size={20} color="#374151" />
-                <Text style={styles.menuText}>Convert to PDF</Text>
-              </View>
-              <View style={styles.menuOption}>
-                <Feather name="share-2" size={20} color="#374151" />
-                <Text style={styles.menuText}>Share</Text>
+                <Ionicons name="create-outline" size={20} color="#374151" />
+                <Text style={styles.menuText}>Rename</Text>
               </View>
               <View style={styles.menuOption}>
                 <Ionicons name="star-outline" size={20} color="#374151" />
@@ -413,9 +389,10 @@ const Home = () => {
                   style={{ marginLeft: "auto" }}
                 />
               </View>
-              <View style={styles.menuOption}>
-                <Ionicons name="create-outline" size={20} color="#374151" />
-                <Text style={styles.menuText}>Rename</Text>
+
+                <View style={styles.menuOption}>
+                  <MaterialIcons name="cloud-upload" size={20} color="#374151" />
+                  <Text style={styles.menuText}>Upload to Cloud</Text>
               </View>
               <View style={styles.menuOption}>
                 <Ionicons name="remove-circle-outline" size={20} color="#374151" />
@@ -510,7 +487,7 @@ const Home = () => {
       <Modal visible={isLoading} animationType="fade" transparent>
         <View style={styles.loadingOverlay}>
           <LottieView
-            source={loadingLottie}
+            source={require("@/assets/images/loading.json")}
             autoPlay
             loop
             style={{ width: 150, height: 150 }}
@@ -521,48 +498,42 @@ const Home = () => {
   );
 };
 
-const uploadDocument = async (user: any, documents: DocItem[], setDocuments: (docs: DocItem[]) => void, onError: (msg: string) => void, saveDocs: (docs: DocItem[]) => Promise<void>) => {
+const uploadDocument = async (
+  user: any,
+  onError: (msg: string) => void,
+  addDocument: (newDoc: DocItem) => Promise<void>
+) => {
   if (!user?.id) {
     onError("User not authenticated. Please log in.");
     return;
   }
-
   try {
     const result = await DocumentPicker.getDocumentAsync({});
     if (result.canceled) return;
-
     const { uri, name } = result.assets[0];
-    const ext = name.split('.').pop()?.toLowerCase() || '';
-
+    const ext = name.split(".").pop()?.toLowerCase() || "";
     if (!ALLOWED_EXTS.includes(ext)) {
       onError("Unsupported file type.");
       return;
     }
-
-    const localDir = `${Paths.document.uri}documents/${user.id}/`;
+    const localDir = `${FileSystem.documentDirectory}documents/${user.id}/`;
     await FileSystem.makeDirectoryAsync(localDir, { intermediates: true });
-
     const fileId = Date.now().toString();
     const localUri = `${localDir}${fileId}.${ext}`;
-
     await FileSystem.copyAsync({ from: uri, to: localUri });
-
     const newDoc = {
       fileId,
       userId: user.id,
       name,
       ext,
       favorite: false,
-      source: 'Device',
+      source: "Device",
       uploadedAt: Date.now(),
       localUri,
-    } as unknown as DocItem;
-
-    const updated = [...documents, newDoc];
-    setDocuments(updated);
-    await saveDocs(updated);
-  } catch (e) {
-    console.error(e);
+    } as DocItem;
+    await addDocument(newDoc);
+  } catch (e: any) {
+    console.error("Upload document error:", e.message);
     onError("Failed to upload document.");
   }
 };
@@ -590,6 +561,19 @@ const styles = StyleSheet.create({
   },
   logoutIcon: { width: 18, height: 18, marginRight: 8, tintColor: "#111827" },
   logoutText: { color: "#111827", fontWeight: "600" },
+  menuBtnTop: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#FFFFFF",
+    shadowColor: "#000",
+    shadowOpacity: 0.03,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 1,
+    marginBottom: 80,
+  },
   searchBox: {
     backgroundColor: "#fff",
     borderRadius: 999,
@@ -709,7 +693,7 @@ const styles = StyleSheet.create({
     marginLeft: 12,
   },
   closeMenuBtn: {
-    backgroundColor: "#16A34A",
+    backgroundColor: "#111827",
     paddingVertical: 12,
     paddingHorizontal: 20,
     borderRadius: 999,
@@ -723,7 +707,7 @@ const styles = StyleSheet.create({
   },
   loadingOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.1)",
+    backgroundColor: "rgba(0,0,0,0.5)",
     justifyContent: "center",
     alignItems: "center",
   },

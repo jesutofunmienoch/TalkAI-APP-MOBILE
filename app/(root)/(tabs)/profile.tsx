@@ -1,4 +1,3 @@
-// app/(root)/(tabs)/profile.tsx
 import React, { useEffect, useState } from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
@@ -17,7 +16,7 @@ import { Link, router } from "expo-router";
 
 type AppRoute =
   | "/data-controls"
-  | "/shared-links"
+  | "/referrals"
   | "/recently-deleted"
   | "/terms"
   | "/privacy"
@@ -27,34 +26,65 @@ export default function ProfileSettingsScreen() {
   const { user, isLoaded } = useUser();
   const [hapticsPress, setHapticsPress] = useState(true);
   const [hapticsResponding, setHapticsResponding] = useState(false);
-  const [appearance, setAppearance] = useState<"system" | "foryou" | "dark" | "light">("light");
+  const [appearance, setAppearance] = useState<
+    "system" | "foryou" | "dark" | "light"
+  >("light");
+
+  // Mock data (replace with backend/Clerk data in real app)
+  const tokens = 1000; // Remaining tokens
+  const minutes = (tokens / 200).toFixed(2); // 200 tokens/minute
+  const files = 10; // Static number of files
+  const plan = "Monthly"; // Mock plan (Monthly or Yearly)
 
   useEffect(() => {
     if (isLoaded && user) console.log("profile user:", user);
   }, [isLoaded, user]);
 
   const displayName =
-    user?.firstName || user?.username || user?.primaryEmailAddress?.emailAddress?.split("@")[0] || "enochagram";
+    user?.firstName ||
+    user?.username ||
+    user?.primaryEmailAddress?.emailAddress?.split("@")[0] ||
+    "enochagram";
 
   const avatarUri =
-    user?.externalAccounts?.[0]?.imageUrl ?? user?.imageUrl ?? "https://i.pravatar.cc/150?u=enochagram";
+    user?.externalAccounts?.[0]?.imageUrl ??
+    user?.imageUrl ??
+    "https://i.pravatar.cc/150?u=enochagram";
 
-  const ListRow: React.FC<{ icon: React.ReactNode; label: string; href?: AppRoute; onPress?: () => void; destructive?: boolean }> = ({
-    icon,
-    label,
-    href,
-    onPress,
-    destructive,
-  }) => {
+  const ListRow: React.FC<{
+    icon: React.ReactNode;
+    label: string;
+    href?: AppRoute;
+    onPress?: () => void;
+    destructive?: boolean;
+  }> = ({ icon, label, href, onPress, destructive }) => {
     const content = (
-      <TouchableOpacity onPress={onPress} activeOpacity={0.75} className="flex-row items-center justify-between py-4">
+      <TouchableOpacity
+        onPress={onPress}
+        activeOpacity={0.75}
+        style={styles.listRowContainer} // Fixed: Use valid style object
+      >
         <View className="flex-row items-center">
-          <View className="w-10 h-10 rounded-xl items-center justify-center mr-4" style={{ backgroundColor: "rgba(0,0,0,0.03)" }}>
+          <View
+            className="w-10 h-10 rounded-xl items-center justify-center mr-4"
+            style={{ backgroundColor: "rgba(0,0,0,0.03)" }}
+          >
             {icon}
           </View>
-          <Text style={[styles.rowLabel, destructive ? { color: "#EF4444" } : undefined]}>{label}</Text>
+          <Text
+            style={[
+              styles.rowLabel,
+              destructive ? { color: "#EF4444" } : undefined,
+            ]}
+          >
+            {label}
+          </Text>
         </View>
-        <Feather name="chevron-right" size={20} color={destructive ? "#EF4444" : "#9CA3AF"} />
+        <Feather
+          name="chevron-right"
+          size={20}
+          color={destructive ? "#EF4444" : "#9CA3AF"}
+        />
       </TouchableOpacity>
     );
 
@@ -69,7 +99,10 @@ export default function ProfileSettingsScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <View className="flex-row items-center px-5 pt-4 pb-2" style={{ alignItems: "center" }}>
+      <View
+        className="flex-row items-center px-5 pt-4 pb-2"
+        style={{ alignItems: "center" }}
+      >
         <TouchableOpacity onPress={() => router.back()} className="p-1">
           <Feather name="x" size={24} color="#111827" />
         </TouchableOpacity>
@@ -77,20 +110,33 @@ export default function ProfileSettingsScreen() {
         <View style={{ width: 28 }} />
       </View>
 
-      <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 60 }} showsVerticalScrollIndicator={false}>
-        <View className="items-center" style={{ marginTop: 6, marginBottom: 18 }}>
+      <ScrollView
+        contentContainerStyle={{ padding: 20, paddingBottom: 60 }}
+        showsVerticalScrollIndicator={false}
+      >
+        <View
+          className="items-center"
+          style={{ marginTop: 6, marginBottom: 18 }}
+        >
           <View style={{ width: 110, height: 110 }}>
             <Image source={{ uri: avatarUri }} style={styles.avatar} />
           </View>
           <Text className="text-base font-semibold mt-3">{displayName}</Text>
-          <Text className="text-sm text-gray-400 mt-1">{user?.primaryEmailAddress?.emailAddress ?? "usermail@gmail.com"}</Text>
+          <Text className="text-sm text-gray-400 mt-1">
+            {user?.primaryEmailAddress?.emailAddress ?? "usermail@gmail.com"}
+          </Text>
         </View>
 
+        {/* SUBSCRIPTION SECTION */}
         <Text style={styles.sectionTitle}>Subscription</Text>
-        <TouchableOpacity activeOpacity={0.85} style={styles.subscriptionCard}>
+        <TouchableOpacity
+          activeOpacity={0.85}
+          style={styles.subscriptionCard}
+          onPress={() => router.push("/upgrade")}
+        >
           <View style={styles.subIconWrap}>
             <LinearGradient
-              colors={["#34D399", "#10B981"]} // Gradient colors for the badge
+              colors={["#34D399", "#10B981"]}
               style={styles.gradientBadge}
             >
               <Feather name="zap" size={20} color="#FFFFFF" />
@@ -104,43 +150,61 @@ export default function ProfileSettingsScreen() {
           <Feather name="chevron-right" size={20} color="#9CA3AF" />
         </TouchableOpacity>
 
-        <Text style={[styles.sectionTitle, { marginTop: 18 }]}>Appearance</Text>
+        {/* APPEARANCE SECTION */}
+        <Text style={[styles.sectionTitle, { marginTop: 18 }]}>Usage</Text>
         <View className="flex-row justify-between mt-3" style={{ gap: 12 }}>
           <TouchableOpacity
             activeOpacity={0.8}
-            style={[styles.apTile, appearance === "system" ? styles.apTileSelected : undefined]}
-            onPress={() => setAppearance("system")}
+            style={[
+              styles.apTile,
+            ]}
+            onPress={() => setAppearance("light")}
           >
-            <Feather name="sliders" size={20} color="#374151" />
-            <Text style={styles.apLabel}>Token</Text>
+            <Text style={styles.apValue}>{tokens}</Text>
+            <Text style={styles.apLabel}>Tokens</Text>
           </TouchableOpacity>
           <TouchableOpacity
             activeOpacity={0.8}
-            style={[styles.apTile, appearance === "foryou" ? styles.apTileSelected : undefined]}
+            style={[
+              styles.apTile,
+            ]}
             onPress={() => setAppearance("foryou")}
           >
-            <Feather name="heart" size={20} color="#374151" />
-            <Text style={styles.apLabel}>Munites</Text>
+            <Text style={styles.apValue}>{minutes}</Text>
+            <Text style={styles.apLabel}>Minutes</Text>
           </TouchableOpacity>
           <TouchableOpacity
             activeOpacity={0.8}
-            style={[styles.apTile, appearance === "dark" ? styles.apTileSelected : undefined]}
+            style={[
+              styles.apTile,
+            ]}
             onPress={() => setAppearance("dark")}
           >
-            <Feather name="moon" size={20} color="#374151" />
+            <Text style={styles.apValue}>{files}</Text>
             <Text style={styles.apLabel}>Files</Text>
           </TouchableOpacity>
           <TouchableOpacity
             activeOpacity={0.8}
-            style={[styles.apTile, appearance === "light" ? styles.apTileSelected : undefined]}
+            style={[
+              styles.apTile,
+            ]}
             onPress={() => setAppearance("light")}
           >
-            <Feather name="sun" size={20} color="#374151" />
+            <Text style={styles.apValue}>{plan}</Text>
             <Text style={styles.apLabel}>Plan</Text>
           </TouchableOpacity>
         </View>
+        <TouchableOpacity
+          activeOpacity={0.8}
+          style={styles.changePlanButton}
+          onPress={() => router.push("/upgrade")}
+        >
+        </TouchableOpacity>
 
-        <Text style={[styles.sectionTitle, { marginTop: 18 }]}>Haptics & Vibration</Text>
+        {/* HAPTICS SECTION */}
+        <Text style={[styles.sectionTitle, { marginTop: 18 }]}>
+          Haptics & Vibration
+        </Text>
         <View style={{ marginTop: 6 }}>
           <View style={styles.rowBetween}>
             <View style={{ flexDirection: "row", alignItems: "center" }}>
@@ -172,14 +236,41 @@ export default function ProfileSettingsScreen() {
           </View>
         </View>
 
-        <Text style={[styles.sectionTitle, { marginTop: 18 }]}>Data & Information</Text>
+        {/* DATA SECTION */}
+        <Text style={[styles.sectionTitle, { marginTop: 18 }]}>
+          Data & Information
+        </Text>
         <View style={{ marginTop: 8 }}>
-          <ListRow icon={<Feather name="database" size={18} color="#374151" />} label="Data Controls" href="/data-controls" />
-          <ListRow icon={<Feather name="link" size={18} color="#374151" />} label="Shared Links" href="/shared-links" />
-          <ListRow icon={<Feather name="trash-2" size={18} color="#374151" />} label="Recently Deleted" href="/recently-deleted" />
-          <ListRow icon={<Feather name="file-text" size={18} color="#374151" />} label="Terms of Use" href="/terms" />
-          <ListRow icon={<Feather name="lock" size={18} color="#374151" />} label="Privacy Policy" href="/privacy" />
-          <ListRow icon={<Feather name="message-square" size={18} color="#374151" />} label="Report Issue" href="/report" />
+          <ListRow
+            icon={<Feather name="database" size={18} color="#374151" />}
+            label="Data Controls"
+            href="/data-controls"
+          />
+          <ListRow
+            icon={<Feather name="link" size={18} color="#374151" />}
+            label="Referral"
+            href="/referrals"
+          />
+          <ListRow
+            icon={<Feather name="trash-2" size={18} color="#374151" />}
+            label="Recently Deleted"
+            href="/recently-deleted"
+          />
+          <ListRow
+            icon={<Feather name="file-text" size={18} color="#374151" />}
+            label="Terms of Use"
+            href="/terms"
+          />
+          <ListRow
+            icon={<Feather name="lock" size={18} color="#374151" />}
+            label="Privacy Policy"
+            href="/privacy"
+          />
+          <ListRow
+            icon={<Feather name="message-square" size={18} color="#374151" />}
+            label="Report Issue"
+            href="/report"
+          />
           <View style={{ height: 8 }} />
           <ListRow
             icon={<Feather name="log-out" size={18} color="#EF4444" />}
@@ -259,19 +350,24 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  apTileSelected: {
-    backgroundColor: "#FFFFFF",
-    borderWidth: 1,
-    borderColor: "#E6E9EE",
-    shadowColor: "#000",
-    shadowOpacity: 0.04,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
+  apValue: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#0F172A",
+    marginBottom: 4,
   },
   apLabel: {
-    marginTop: 8,
     fontSize: 12,
     color: "#374151",
+  },
+  changePlanButton: {
+    marginTop: 12,
+    alignItems: "center",
+  },
+  changePlanText: {
+    fontSize: 14,
+    color: "#10B981",
+    fontWeight: "600",
   },
   rowBetween: {
     flexDirection: "row",
@@ -291,5 +387,11 @@ const styles = StyleSheet.create({
   rowLabel: {
     fontSize: 16,
     color: "#0F172A",
+  },
+  listRowContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 12,
   },
 });

@@ -1,13 +1,22 @@
-import React from "react";
+import React, { useLayoutEffect } from "react";
 import { SafeAreaView, View, Text, TouchableOpacity, StyleSheet } from "react-native";
 import { Feather } from "@expo/vector-icons";
-import { router } from "expo-router";
+import { useNavigation } from "expo-router";
 
 export default function ReportScreen() {
+  const navigation = useNavigation();
+
+  // Remove the default navigation header
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      headerShown: false,
+    });
+  }, [navigation]);
+
   return (
     <SafeAreaView style={styles.container}>
       <View className="flex-row items-center px-5 pt-4 pb-2" style={{ alignItems: "center" }}>
-        <TouchableOpacity onPress={() => router.back()} className="p-1">
+        <TouchableOpacity onPress={() => navigation.goBack()} className="p-1">
           <Feather name="x" size={24} color="#111827" />
         </TouchableOpacity>
         <Text className="text-lg font-bold flex-1 text-center">Report Issue</Text>
@@ -28,6 +37,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#FBF8F6",
+    paddingTop: 40,
   },
   content: {
     padding: 20,

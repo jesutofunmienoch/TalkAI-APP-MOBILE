@@ -4,7 +4,6 @@ import { useCallback, useState } from "react";
 import { Alert, Image, ScrollView, Text, View } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 
-
 import CustomButton from "@/components/CustomButton";
 import InputField from "@/components/InputField";
 import OAuth from "@/components/OAuth";
@@ -35,8 +34,8 @@ const SignIn = () => {
         Alert.alert("Error", "Log in failed. Please try again.");
       }
     } catch (err: any) {
-      console.log(JSON.stringify(err, null, 2));
-      Alert.alert("Error", err.errors[0].longMessage);
+      console.error("Sign in error:", JSON.stringify(err, null, 2));
+      Alert.alert("Error", err.errors?.[0]?.longMessage || "Log in failed. Please try again.");
     }
   }, [isLoaded, form]);
 
@@ -44,26 +43,21 @@ const SignIn = () => {
     <ScrollView className="flex-1 bg-white">
       <View className="flex-1 bg-white">
         <View className="relative w-full h-[250px]">
-  <Image source={images.signin} className="z-0 w-full h-[250px]" />
-
-  {/* ✅ Gradient overlay */}
-  <LinearGradient
-    colors={["transparent", "white"]}  // top transparent, bottom white
-    style={{
-      position: "absolute",
-      bottom: 0,
-      left: 0,
-      right: 0,
-      height: 120, // adjust height of fade
-    }}
-  />
-
-  <Text className="text-2xl text-black font-JakartaSemiBold absolute bottom-5 left-5">
-    Welcome 👋
-  </Text>
-</View>
-
-
+          <Image source={images.signin} className="z-0 w-full h-[250px]" />
+          <LinearGradient
+            colors={["transparent", "white"]}
+            style={{
+              position: "absolute",
+              bottom: 0,
+              left: 0,
+              right: 0,
+              height: 120,
+            }}
+          />
+          <Text className="text-2xl text-black font-JakartaSemiBold absolute bottom-5 left-5">
+            Welcome 👋
+          </Text>
+        </View>
         <View className="p-5">
           <InputField
             label="Email"
@@ -73,7 +67,6 @@ const SignIn = () => {
             value={form.email}
             onChangeText={(value: string) => setForm({ ...form, email: value })}
           />
-
           <InputField
             label="Password"
             placeholder="Enter password"
@@ -83,15 +76,12 @@ const SignIn = () => {
             value={form.password}
             onChangeText={(value: string) => setForm({ ...form, password: value })}
           />
-
           <CustomButton
             title="Sign In"
             onPress={onSignInPress}
             className="mt-6"
           />
-
           <OAuth />
-
           <Link
             href="/sign-up"
             className="text-lg text-center text-general-200 mt-10"

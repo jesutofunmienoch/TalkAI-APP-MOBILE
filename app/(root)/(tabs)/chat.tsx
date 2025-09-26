@@ -1,285 +1,345 @@
-// app/(root)/(tabs)/chat.tsx
+import React, { useEffect, useRef, useState } from "react";
 import {
+  View,
+  Text,
+  TouchableOpacity,
+  TextInput,
+  StyleSheet,
   KeyboardAvoidingView,
   Platform,
-  ScrollView,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
   Animated,
+  ScrollView,
   Keyboard,
-  StyleSheet,
+  Image,
 } from "react-native";
-import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
-import { Feather, Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
-import { useState, useEffect, useRef } from "react";
-import * as Clipboard from "expo-clipboard";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
+import { Feather, Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { useUser } from "@clerk/clerk-expo";
+import { useRouter } from "expo-router";
+import LottieView from "lottie-react-native";
+import MaskedView from "@react-native-masked-view/masked-view";
+
+const suggestionChips = [
+  "Give me study tips",
+  "Inspire me",
+  "Save me time",
+  "Tell me something new",
+];
 
 const AnimatedLinearGradient = Animated.createAnimatedComponent(LinearGradient);
 
-const UserMessage = ({ text }: { text: string }) => {
-  const [copied, setCopied] = useState(false);
-  const handleCopy = async () => {
-    await Clipboard.setStringAsync(text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-  return (
-    <View style={{ alignItems: "flex-end", marginTop: 8 }}>
-      <View
-        style={{
-          backgroundColor: "#f3f4f6",
-          borderTopRightRadius: 18,
-          borderTopLeftRadius: 18,
-          borderBottomLeftRadius: 18,
-          padding: 10,
-          maxWidth: "80%",
-        }}
-      >
-        <Text style={{ fontSize: 15, color: "#111" }}>{text}</Text>
-      </View>
-      <TouchableOpacity style={{ padding: 2, marginTop: 2 }} onPress={handleCopy}>
-        <Feather
-          name={copied ? "check" : "copy"}
-          size={14}
-          color={copied ? "green" : "gray"}
-        />
-      </TouchableOpacity>
-    </View>
-  );
-};
-
-const AIMessage = ({ text }: { text: string }) => (
-  <View style={{ alignItems: "flex-start", marginBottom: 12 }}>
-    <View style={{ paddingVertical: 6, maxWidth: "100%" }}>
-      <Text style={{ fontSize: 15, color: "#111" }}>{text}</Text>
-    </View>
-  </View>
-);
-
-const Chat = () => {
+export default function Chat() {
   const { user } = useUser();
-  const insets = useSafeAreaInsets();
+  const router = useRouter();
+
   const [inputText, setInputText] = useState("");
   const [inputHeight, setInputHeight] = useState(58);
-  const [messages, setMessages] = useState<{ type: "user" | "ai"; text: string }[]>([]);
-  const maxInputHeight = 120;
+  const textInputRef = useRef<TextInput | null>(null);
+
+  // Animated gradient rotation value
   const gradientAnimation = useRef(new Animated.Value(0)).current;
-  const textInputRef = useRef<TextInput>(null);
-  const scrollViewRef = useRef<ScrollView>(null);
+  const keyboardOffset = useRef(new Animated.Value(12)).current;
 
   useEffect(() => {
     Animated.loop(
       Animated.timing(gradientAnimation, {
         toValue: 1,
-        duration: 3000,
+        duration: 4000,
         useNativeDriver: false,
       })
     ).start();
-  }, []);
 
-  const startX = gradientAnimation.interpolate({
-    inputRange: [0, 0.5, 1],
-    outputRange: [0, 1, 0],
+    const onShow = (e: any) => {
+      const kbHeight = e.endCoordinates?.height || 250;
+      Animated.timing(keyboardOffset, {
+        toValue: kbHeight + 12,
+        duration: 250,
+        useNativeDriver: false,
+      }).start();
+    };
+
+    const onHide = () => {
+      Animated.timing(keyboardOffset, {
+        toValue: 12,
+        duration: 250,
+        useNativeDriver: false,
+      }).start();
+    };
+
+    const showSub = Keyboard.addListener("keyboardDidShow", onShow);
+    const hideSub = Keyboard.addListener("keyboardDidHide", onHide);
+
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, [gradientAnimation, keyboardOffset]);
+
+  // Gradient animation
+  const start = gradientAnimation.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, 1],
   });
-  const endX = gradientAnimation.interpolate({
-    inputRange: [0, 0.5, 1],
-    outputRange: [1, 0, 1],
+  const end = gradientAnimation.interpolate({
+    inputRange: [0, 1],
+    outputRange: [1, 0],
   });
 
-  const handleButtonPress = (text: string) => {
-    setInputText(text);
+  const handleChipPress = (text: string) => {
+    const cleaned = text.replace(/\n/g, " ");
+    setInputText(cleaned);
     textInputRef.current?.focus();
   };
 
   const handleContentSizeChange = (e: any) => {
-    const newHeight = Math.min(e.nativeEvent.contentSize.height, maxInputHeight);
+    const newHeight = Math.min(e.nativeEvent.contentSize.height, 120);
     setInputHeight(Math.max(58, newHeight));
-  };
-
-  const handleSend = () => {
-    if (inputText.trim()) {
-      setMessages((prev) => [...prev, { type: "user", text: inputText }]);
-      setTimeout(() => {
-        setMessages((prev) => [...prev, { type: "ai", text: `Response to: ${inputText}` }]);
-        scrollViewRef.current?.scrollToEnd({ animated: true });
-      }, 500);
-      setInputText("");
-      setInputHeight(58);
-    }
   };
 
   return (
     <SafeAreaView style={styles.safe}>
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        keyboardVerticalOffset={Platform.OS === "ios" ? insets.bottom + 50 : 0}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
         {/* Header */}
         <View style={styles.header}>
-          <TouchableOpacity style={styles.headerBtn} onPress={() => router.back()}>
-            <Feather name="arrow-left" size={22} color="#111827" />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>ChatBot</Text>
-          <TouchableOpacity style={styles.headerBtn} onPress={() => router.push("/menu")}>
+          <TouchableOpacity
+            style={styles.headerBtn}
+            onPress={() => router.push("/menu")}
+          >
             <Feather name="menu" size={22} color="#111827" />
           </TouchableOpacity>
-        </View>
 
-        {/* Messages */}
-        <ScrollView
-          ref={scrollViewRef}
-          style={{ flex: 1, paddingHorizontal: 16 }}
-          contentContainerStyle={{ paddingBottom: 16 }}
-          keyboardShouldPersistTaps="handled"
-        >
-          {messages.map((msg, i) =>
-            msg.type === "user" ? (
-              <UserMessage key={i} text={msg.text} />
-            ) : (
-              <AIMessage key={i} text={msg.text} />
-            )
-          )}
-        </ScrollView>
-
-        {/* Quick actions + Input */}
-        <View style={{ flexShrink: 0 }}>
-          {/* Input bar */}
-          <View style={[styles.footerWrapper, { paddingBottom: insets.bottom || 8 }]}>
-            {messages.length === 0 && (
-              <View style={styles.quickWrapper}>
-                <Text style={styles.helloText}>Hello, {user?.firstName || "Guest"}</Text>
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={styles.scrollContainer}
-                >
-                  {["Tell me what you can do", "Help me plan", "Research a topic", "Help me write"].map(
-                    (item, i) => (
-                      <TouchableOpacity key={i} style={styles.scrollBtn} onPress={() => handleButtonPress(item)}>
-                        <Text style={styles.scrollBtnText}>{item}</Text>
-                      </TouchableOpacity>
-                    )
-                  )}
-                </ScrollView>
-              </View>
-            )}
-
-            <AnimatedLinearGradient
-              colors={["#22c55e", "#4ade80", "#22c55e"]}
-              start={[startX, 0]}
-              end={[endX, 1]}
-              style={styles.glowWrapper}
-            >
-              <View style={[styles.inputBar, { height: inputHeight }]}>
-                <Ionicons name="add" size={22} color="#6B7280" />
-                <TextInput
-                  ref={textInputRef}
-                  style={styles.input}
-                  value={inputText}
-                  onChangeText={(t) => {
-                    setInputText(t);
-                    if (!t) setInputHeight(58);
-                  }}
-                  placeholder="Ask anything"
-                  placeholderTextColor="#374151"
-                  multiline
-                  onContentSizeChange={handleContentSizeChange}
-                />
-                <View style={styles.actions}>
-                  <TouchableOpacity style={styles.iconBtn}>
-                    <Ionicons name="mic" size={20} color="#15803d" />
-                  </TouchableOpacity>
-                  <TouchableOpacity style={[styles.iconBtn, { marginLeft: 8 }]} onPress={handleSend}>
-                    <Feather name="send" size={20} color="#15803d" />
-                  </TouchableOpacity>
-                </View>
-              </View>
-            </AnimatedLinearGradient>
+          <View style={styles.centerTitle}>
+            <Text style={styles.headerTitle}>Talkai</Text>
+            <View style={styles.modelBadge}>
+              <Text style={styles.modelText}>2.1.0 Flash ▼</Text>
+            </View>
           </View>
+
+          <TouchableOpacity
+            style={styles.headerBtn}
+            onPress={() => router.push("/profile")}
+          >
+            {user?.imageUrl ? (
+              <Image source={{ uri: user.imageUrl }} style={styles.avatar} />
+            ) : (
+              <Ionicons name="person-circle-outline" size={32} color="#111827" />
+            )}
+          </TouchableOpacity>
         </View>
+
+        {/* Animation and Greeting */}
+        <View style={styles.animationContainer}>
+          <LottieView
+            source={require("../../../assets/images/chatbot.json")}
+            autoPlay
+            loop
+            style={styles.animation}
+          />
+
+          {/* Gradient Greeting Text */}
+          <MaskedView
+            maskElement={
+              <Text style={styles.greetingText}>
+                Hello, {user?.firstName || "User"}
+              </Text>
+            }
+          >
+            <LinearGradient
+              colors={["#3b82f6", "#9333ea", "#f43f5e"]} // blue → purple → pink
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+            >
+              <Text style={[styles.greetingText, { opacity: 0 }]}>
+                Hello, {user?.firstName || "User"}
+              </Text>
+            </LinearGradient>
+          </MaskedView>
+        </View>
+
+        {/* Chips just above input */}
+        <View style={styles.bottomContent}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.scrollContainer}
+          >
+            {suggestionChips.map((chip, i) => (
+              <TouchableOpacity
+                key={i}
+                style={styles.scrollBtn}
+                onPress={() => handleChipPress(chip)}
+              >
+                <Text style={styles.scrollBtnText}>{chip}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+
+        {/* Floating animated input */}
+        <Animated.View
+          style={[
+            styles.container,
+            {
+              bottom: keyboardOffset,
+            },
+          ]}
+        >
+          <AnimatedLinearGradient
+            colors={["#93c5fd", "#60a5fa", "#a5b4fc", "#f0abfc", "#93c5fd"]}
+            start={[start as any, 0]}
+            end={[0, end as any]}
+            style={styles.glowWrapper}
+          >
+            <View style={[styles.inputBar, { height: inputHeight }]}>
+              <TouchableOpacity onPress={() => textInputRef.current?.focus()}>
+                <Ionicons name="add" size={22} color="#6B7280" />
+              </TouchableOpacity>
+
+              <TextInput
+                ref={textInputRef}
+                style={[styles.input, { minHeight: 58, maxHeight: 120 }]}
+                value={inputText}
+                onChangeText={setInputText}
+                placeholder="Ask TalkAI"
+                placeholderTextColor="#6b7280"
+                multiline
+                onContentSizeChange={handleContentSizeChange}
+                returnKeyType="send"
+              />
+
+              <View style={styles.actions}>
+                <TouchableOpacity style={styles.iconBtn}>
+                  <Feather name="mic" size={18} color="#2563eb" />
+                </TouchableOpacity>
+
+                <TouchableOpacity style={[styles.iconBtn, { marginLeft: 8 }]}>
+                  <MaterialIcons name="auto-awesome" size={18} color="#2563eb" />
+                </TouchableOpacity>
+              </View>
+            </View>
+          </AnimatedLinearGradient>
+        </Animated.View>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
-};
+}
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: "#fff" },
+
   header: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: 10,
   },
-  headerBtn: { padding: 6 },
-  headerTitle: { fontSize: 20, fontWeight: "700", color: "#111827" },
+  headerBtn: { padding: 4 },
+  centerTitle: { alignItems: "center" },
+  headerTitle: { fontSize: 18, fontWeight: "600", color: "#111827" },
+  modelBadge: {
+    marginTop: 2,
+    backgroundColor: "#f3f4f6",
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: 12,
+  },
+  modelText: { fontSize: 12, color: "#374151" },
 
-  quickWrapper: {
-    marginBottom: 4,
-    paddingHorizontal: 16,
+  avatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    borderWidth: 2,
+    borderColor: "#60a5fa",
   },
-  helloText: {
-    fontSize: 20,
+
+  animationContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  animation: {
+    width: 200,
+    height: 200,
+  },
+  greetingText: {
+    fontSize: 24,
     fontWeight: "600",
-    color: "#15803d",
-    marginBottom: 12,
+    textAlign: "center",
   },
-  scrollContainer: { paddingHorizontal: 6 },
+
+  bottomContent: {
+    marginBottom: 100,
+  },
+  scrollContainer: {
+    paddingHorizontal: 12,
+  },
   scrollBtn: {
     backgroundColor: "#fff",
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderRadius: 12,
-    marginRight: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 16,
+    marginRight: 10,
     borderWidth: 1,
-    borderColor: "#d1fae5",
+    borderColor: "#e5e7eb",
+    alignItems: "center",
+    justifyContent: "center",
   },
-  scrollBtnText: { fontSize: 14, fontWeight: "500", color: "#111827" },
+  scrollBtnText: {
+    fontSize: 14,
+    fontWeight: "500",
+    color: "#111827",
+    textAlign: "center",
+  },
 
-  footerWrapper: {
-    padding: 8,
-    backgroundColor: "#fff",
+  container: {
+    width: "100%",
+    alignItems: "center",
+    position: "absolute",
+    left: 0,
+    right: 0,
   },
   glowWrapper: {
     borderRadius: 40,
     padding: 4,
-    width: "100%",
-    shadowColor: "#22c55e",
+    width: "94%",
+    shadowColor: "#93c5fd",
+    shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.6,
-    shadowRadius: 8,
-    ...Platform.select({ android: { elevation: 6 } }),
+    shadowRadius: 10,
+    ...Platform.select({
+      android: { elevation: 10 },
+    }),
   },
   inputBar: {
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "#fff",
     borderRadius: 36,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
   },
   input: {
     flex: 1,
-    marginLeft: 8,
+    marginLeft: 10,
     color: "#374151",
-    fontSize: 15,
-    minHeight: 58,
-    maxHeight: 120,
+    fontSize: 16,
   },
-  actions: { flexDirection: "row", alignItems: "center" },
+  actions: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
   iconBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: "#d1fae5",
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "#e0f2fe",
     alignItems: "center",
     justifyContent: "center",
   },
 });
-
-export default Chat;

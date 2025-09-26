@@ -1,3 +1,4 @@
+// lib/auth.ts
 import * as Linking from "expo-linking";
 import * as SecureStore from "expo-secure-store";
 
