@@ -77,7 +77,7 @@ const DocNav: React.FC<DocNavProps> = ({ activeTab, setActiveTab }) => {
                 <LinearGradient
                   colors={
                     isActive
-                      ? ["#166534", "#22c55e"] // deeper green gradient
+                      ? ["#60a5fa", "#a5b4fc", "#f0abfc"] // soft blue → purple → pink (AskAI theme)
                       : ["#f1f5f9", "#f8fafc"]
                   }
                   start={{ x: 0, y: 0 }}
@@ -183,12 +183,12 @@ const styles = StyleSheet.create({
     bottom: -6,
     height: 3,
     width: "22%",
-    backgroundColor: "#16a34a",
+    backgroundColor: "#60a5fa", // changed to match AskAI gradient (blue accent)
     borderRadius: 2,
     ...Platform.select({
       web: {
         scrollbarWidth: "thin",
-        scrollbarColor: "#16a34a transparent",
+        scrollbarColor: "#60a5fa transparent",
       },
     }),
   },

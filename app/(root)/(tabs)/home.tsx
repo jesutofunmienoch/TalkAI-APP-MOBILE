@@ -22,7 +22,8 @@ import { DocumentContext, DocItem } from "@/context/DocumentContext";
 import { useUser, useAuth } from "@clerk/clerk-expo";
 import { router } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { Directory, File, Paths } from 'expo-file-system'; // Updated import
+import * as FileSystem from 'expo-file-system';
+import { Paths } from 'expo-file-system';
 import * as DocumentPicker from 'expo-document-picker';
 
 const { width, height } = Dimensions.get("window");
@@ -163,8 +164,7 @@ const Home = () => {
       }
 
       if (doc.localUri) {
-        const file = new File(doc.localUri);
-        await file.delete();
+        await FileSystem.deleteAsync(doc.localUri);
       }
 
       const updated = documents.filter((d: DocItem) => d.fileId !== doc.fileId);
@@ -186,7 +186,7 @@ const Home = () => {
   const handleViewDocument = (doc: DocItem) => {
     setIsLoading(true);
     router.push({
-      pathname: "/(root)/document-view" as const, // Or change to "/document-view" if not in (root)
+      pathname: "/document-view" as const,
       params: { docId: doc.fileId },
     });
     setIsLoading(false);
@@ -303,6 +303,7 @@ const Home = () => {
                   );
                 }}
                 ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
+                nestedScrollEnabled={true}
               />
               {filteredNonFavorites.length >= 4 && (
                 <TouchableOpacity
@@ -496,6 +497,7 @@ const Home = () => {
                     );
                   }}
                   ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
+                  nestedScrollEnabled={true}
                 />
               )}
               <TouchableOpacity onPress={() => setSeeMoreVisible(false)} style={styles.closeMenuBtn}>
@@ -537,16 +539,13 @@ const uploadDocument = async (user: any, documents: DocItem[], setDocuments: (do
       return;
     }
 
-    // New API
-    const baseDir = new Directory(Paths.document);
-    const localDir = new Directory(baseDir.uri + `documents/${user.id}/`);
-    await localDir.create({ intermediates: true });
+    const localDir = `${Paths.document.uri}documents/${user.id}/`;
+    await FileSystem.makeDirectoryAsync(localDir, { intermediates: true });
 
     const fileId = Date.now().toString();
-    const localFile = new File(localDir.uri + `${fileId}.${ext}`);
+    const localUri = `${localDir}${fileId}.${ext}`;
 
-    const sourceFile = new File(uri);
-    await sourceFile.copy(localFile);
+    await FileSystem.copyAsync({ from: uri, to: localUri });
 
     const newDoc = {
       fileId,
@@ -556,7 +555,7 @@ const uploadDocument = async (user: any, documents: DocItem[], setDocuments: (do
       favorite: false,
       source: 'Device',
       uploadedAt: Date.now(),
-      localUri: localFile.uri,
+      localUri,
     } as unknown as DocItem;
 
     const updated = [...documents, newDoc];

@@ -70,10 +70,11 @@ export default function Layout() {
                 Platform.OS === "ios"
                   ? "rgba(255,255,255,0.3)"
                   : "rgba(255,255,255,0.9)",
-              height: 70,
+              height: 90,
               shadowColor: "#000",
               shadowOffset: { width: 0, height: 2 },
               shadowOpacity: 0.1,
+              paddingBottom: 15,
               shadowRadius: 6,
               elevation: 6,
               overflow: "hidden",

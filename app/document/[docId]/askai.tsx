@@ -28,11 +28,11 @@ export default function AskAI() {
   const keyboardOffset = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    // Gradient animation
+    // Loop border animation
     Animated.loop(
       Animated.timing(gradientAnimation, {
         toValue: 1,
-        duration: 3000,
+        duration: 4000,
         useNativeDriver: false,
       })
     ).start();
@@ -64,24 +64,15 @@ export default function AskAI() {
     };
   }, [gradientAnimation, keyboardOffset]);
 
-  const startX = gradientAnimation.interpolate({
-    inputRange: [0, 0.5, 1],
-    outputRange: [0, 1, 0],
+  // Animate gradient start/end positions (rotating effect)
+  const start = gradientAnimation.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, 1],
   });
 
-  const startY = gradientAnimation.interpolate({
-    inputRange: [0, 0.5, 1],
-    outputRange: [0, 1, 0],
-  });
-
-  const endX = gradientAnimation.interpolate({
-    inputRange: [0, 0.5, 1],
-    outputRange: [1, 0, 1],
-  });
-
-  const endY = gradientAnimation.interpolate({
-    inputRange: [0, 0.5, 1],
-    outputRange: [1, 0, 1],
+  const end = gradientAnimation.interpolate({
+    inputRange: [0, 1],
+    outputRange: [1, 0],
   });
 
   const handleButtonPress = (text: string) => {
@@ -134,9 +125,9 @@ export default function AskAI() {
         ]}
       >
         <AnimatedLinearGradient
-          colors={["#22c55e", "#4ade80", "#22c55e"]}
-          start={[startX, startY]}
-          end={[endX, endY]}
+          colors={["#93c5fd", "#60a5fa", "#a5b4fc", "#f0abfc", "#93c5fd"]} // mixed soft colors
+          start={[start, 0]}
+          end={[0, end]}
           style={styles.glowWrapper}
         >
           <View style={[styles.inputBar, { height: inputHeight }]}>
@@ -147,17 +138,17 @@ export default function AskAI() {
               value={inputText}
               onChangeText={setInputText}
               placeholder="Ask Talkai"
-              placeholderTextColor="#374151"
+              placeholderTextColor="#6b7280"
               multiline
               scrollEnabled
               onContentSizeChange={handleContentSizeChange}
             />
             <View style={styles.actions}>
               <TouchableOpacity style={styles.iconBtn}>
-                <Ionicons name="mic" size={20} color="#15803d" />
+                <Ionicons name="mic" size={20} color="#3b82f6" />
               </TouchableOpacity>
               <TouchableOpacity style={[styles.iconBtn, { marginLeft: 8 }]}>
-                <MaterialIcons name="auto-awesome" size={20} color="#15803d" />
+                <MaterialIcons name="auto-awesome" size={20} color="#3b82f6" />
               </TouchableOpacity>
             </View>
           </View>
@@ -176,7 +167,7 @@ const styles = StyleSheet.create({
   helloText: {
     fontSize: 26,
     fontWeight: "600",
-    color: "#15803d",
+    color: "#374151", // softer blue
     marginBottom: 120,
     textAlign: "center",
   },
@@ -191,7 +182,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     marginRight: 10,
     borderWidth: 1,
-    borderColor: "#d1fae5",
+    borderColor: "#dbeafe", // very soft border
   },
   scrollBtnText: {
     fontSize: 14,
@@ -202,21 +193,21 @@ const styles = StyleSheet.create({
   container: {
     width: "100%",
     alignItems: "center",
-    position: "absolute", // Allow dynamic positioning
+    position: "absolute",
     left: 0,
     right: 0,
-    bottom: 12, // Default bottom position
+    bottom: 12,
   },
   glowWrapper: {
     borderRadius: 40,
     padding: 4,
     width: "94%",
-    shadowColor: "#22c55e",
+    shadowColor: "#93c5fd",
     shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.8,
-    shadowRadius: 12,
+    shadowOpacity: 0.6,
+    shadowRadius: 10,
     ...Platform.select({
-      android: { elevation: 12 },
+      android: { elevation: 10 },
     }),
   },
   inputBar: {
@@ -243,7 +234,7 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: "#d1fae5",
+    backgroundColor: "#e0f2fe", // softer light blue
     alignItems: "center",
     justifyContent: "center",
   },

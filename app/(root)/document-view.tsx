@@ -1,3 +1,4 @@
+// app/(root)/document-view.tsx
 import { Stack } from "expo-router";
 import DocumentView from "@/components/DocumentView";
 
