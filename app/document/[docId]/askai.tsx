@@ -15,6 +15,8 @@ import {
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { useUser } from "@clerk/clerk-expo";
+import MaskedView from "@react-native-masked-view/masked-view";
+import LottieView from "lottie-react-native";
 
 // Animated LinearGradient
 const AnimatedLinearGradient = Animated.createAnimatedComponent(LinearGradient);
@@ -64,7 +66,7 @@ export default function AskAI() {
     };
   }, [gradientAnimation, keyboardOffset]);
 
-  // Animate gradient start/end positions (rotating effect)
+  // Animate gradient start/end positions
   const start = gradientAnimation.interpolate({
     inputRange: [0, 1],
     outputRange: [0, 1],
@@ -88,10 +90,32 @@ export default function AskAI() {
 
   return (
     <View style={styles.page}>
-      {/* Centered Hello User */}
-      <Text style={styles.helloText}>
-        Hello, {user?.firstName || "Guest"}
-      </Text>
+      {/* Animation + Gradient Hello */}
+      <View style={styles.animationContainer}>
+        <LottieView
+          source={require("../../../assets/images/chatbot.json")}
+          autoPlay
+          loop
+          style={styles.animation}
+        />
+        <MaskedView
+          maskElement={
+            <Text style={styles.greetingText}>
+              Hello, {user?.firstName || "User"}
+            </Text>
+          }
+        >
+          <LinearGradient
+            colors={["#3b82f6", "#9333ea", "#f43f5e"]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+          >
+            <Text style={[styles.greetingText, { opacity: 0 }]}>
+              Hello, {user?.firstName || "User"}
+            </Text>
+          </LinearGradient>
+        </MaskedView>
+      </View>
 
       {/* Horizontal Scrollable Buttons */}
       <ScrollView
@@ -125,7 +149,7 @@ export default function AskAI() {
         ]}
       >
         <AnimatedLinearGradient
-          colors={["#93c5fd", "#60a5fa", "#a5b4fc", "#f0abfc", "#93c5fd"]} // mixed soft colors
+          colors={["#93c5fd", "#60a5fa", "#a5b4fc", "#f0abfc", "#93c5fd"]}
           start={[start, 0]}
           end={[0, end]}
           style={styles.glowWrapper}
@@ -164,11 +188,17 @@ const styles = StyleSheet.create({
     paddingTop: 60,
     alignItems: "center",
   },
-  helloText: {
-    fontSize: 26,
-    fontWeight: "600",
-    color: "#374151", // softer blue
-    marginBottom: 120,
+  animationContainer: {
+    alignItems: "center",
+    marginBottom: 60,
+  },
+  animation: {
+    width: 120,
+    height: 120,
+  },
+  greetingText: {
+    fontSize: 20,
+    fontWeight: "700",
     textAlign: "center",
   },
   scrollContainer: {
@@ -182,7 +212,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     marginRight: 10,
     borderWidth: 1,
-    borderColor: "#dbeafe", // very soft border
+    borderColor: "#dbeafe",
   },
   scrollBtnText: {
     fontSize: 14,
@@ -234,7 +264,7 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: "#e0f2fe", // softer light blue
+    backgroundColor: "#e0f2fe",
     alignItems: "center",
     justifyContent: "center",
   },

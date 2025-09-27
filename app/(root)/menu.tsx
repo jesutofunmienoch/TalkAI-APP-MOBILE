@@ -1,4 +1,5 @@
-import React, { useMemo, useState, useRef } from "react";
+// app/(root)/menu.tsx
+import React, { useMemo, useState, useRef, useEffect } from "react";
 import { Stack } from "expo-router";
 import {
   SafeAreaView,
@@ -15,22 +16,13 @@ import {
 import { Feather } from "@expo/vector-icons";
 import { useUser } from "@clerk/clerk-expo";
 import { router } from "expo-router";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 type Conversation = {
   id: string;
   title: string;
   date: string;
 };
-
-const SAMPLE_DATA: Conversation[] = [
-  { id: "1", title: "Nigerian Busy Call Meaning Explained", date: "Sep 08" },
-  { id: "2", title: "Image Editing: Phone Upgrade to 16 Pro Max", date: "Sep 06" },
-  { id: "3", title: "Converting 185 cm to Feet", date: "Sep 04" },
-  { id: "4", title: "Top AI Study Tools 2025", date: "Sep 04" },
-  { id: "5", title: "Converting Steps to Kilometers", date: "Sep 03" },
-  { id: "6", title: "Image Editing: Happy Sunday Addition", date: "Aug 31" },
-  { id: "7", title: "Image Editing: Diamond Chain Addition", date: "Aug 31" },
-];
 
 const SearchBar: React.FC<{
   value: string;
@@ -60,16 +52,33 @@ export default function GrokHistoryScreen() {
   const [menuVisible, setMenuVisible] = useState(false);
   const [menuPosition, setMenuPosition] = useState({ x: 0, y: 0 });
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
-  const [conversations, setConversations] = useState(SAMPLE_DATA);
+  const [conversations, setConversations] = useState<Conversation[]>([]);
   const [renameText, setRenameText] = useState("");
   const [isRenaming, setIsRenaming] = useState(false);
   const menuRef = useRef<View>(null);
 
+  useEffect(() => {
+    const load = async () => {
+      const listStr = await AsyncStorage.getItem('conv_list');
+      if (listStr) {
+        setConversations(JSON.parse(listStr));
+      }
+    };
+    load();
+  }, []);
+
+  const uniqueConversations = useMemo(() => {
+    return conversations.filter(
+      (conv, index, self) =>
+        index === self.findIndex((t) => t.id === conv.id)
+    );
+  }, [conversations]);
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return conversations;
-    return conversations.filter((s) => s.title.toLowerCase().includes(q));
-  }, [query, conversations]);
+    if (!q) return uniqueConversations;
+    return uniqueConversations.filter((s) => s.title.toLowerCase().includes(q));
+  }, [query, uniqueConversations]);
 
   const handleMenuPress = (event: any, item: Conversation) => {
     const { pageX, pageY } = event.nativeEvent;
@@ -85,25 +94,26 @@ export default function GrokHistoryScreen() {
     }
   };
 
-  const handleRenameSubmit = () => {
+  const handleRenameSubmit = async () => {
     if (selectedConversation && renameText.trim()) {
-      setConversations((prev) =>
-        prev.map((conv) =>
-          conv.id === selectedConversation.id
-            ? { ...conv, title: renameText.trim() }
-            : conv
-        )
+      const updated = conversations.map((conv) =>
+        conv.id === selectedConversation.id
+          ? { ...conv, title: renameText.trim() }
+          : conv
       );
+      setConversations(updated);
+      await AsyncStorage.setItem('conv_list', JSON.stringify(updated));
       setIsRenaming(false);
       setMenuVisible(false);
     }
   };
 
-  const handleDelete = () => {
+  const handleDelete = async () => {
     if (selectedConversation) {
-      setConversations((prev) =>
-        prev.filter((conv) => conv.id !== selectedConversation.id)
-      );
+      const updated = conversations.filter((conv) => conv.id !== selectedConversation.id);
+      setConversations(updated);
+      await AsyncStorage.setItem('conv_list', JSON.stringify(updated));
+      await AsyncStorage.removeItem(`conv_${selectedConversation.id}`);
       setMenuVisible(false);
     }
   };
@@ -113,7 +123,7 @@ export default function GrokHistoryScreen() {
     setIsRenaming(false);
   };
 
-  const renderItem = ({ item }: ListRenderItemInfo<Conversation>) => (
+  const renderItem = ({ item, index }: ListRenderItemInfo<Conversation>) => (
     <TouchableOpacity
       activeOpacity={0.7}
       className="flex-row items-start justify-between py-4 border-b border-gray-100"
@@ -178,7 +188,7 @@ export default function GrokHistoryScreen() {
       <Text className="text-base text-gray-500 mt-2 mb-2">CONVERSATIONS</Text>
       <FlatList
         data={filtered}
-        keyExtractor={(item) => item.id}
+        keyExtractor={(item, index) => `${item.id}-${index}`}
         renderItem={renderItem}
         contentContainerStyle={{ paddingBottom: 120 }}
         showsVerticalScrollIndicator={false}
