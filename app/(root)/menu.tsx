@@ -157,7 +157,7 @@ export default function GrokHistoryScreen() {
       <Stack.Screen options={{ headerShown: false }} />
 
       {/* Header */}
-      <View className="flex-row items-center justify-between">
+      <View className="flex-row items-center pt-10 justify-between">
         <TouchableOpacity onPress={() => router.back()} className="p-1">
           <Feather name="arrow-left" size={22} color="#111827" />
         </TouchableOpacity>

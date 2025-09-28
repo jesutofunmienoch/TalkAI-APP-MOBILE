@@ -20,7 +20,8 @@
         "NSCameraUsageDescription": "This app needs camera access for video calls",
         "NSMicrophoneUsageDescription": "This app needs microphone access for voice calls",
         "UIBackgroundModes": ["voip"]
-      }
+      },
+      "bitcode": false
     },
     "android": {
       "package": "com.enoch.ubermain",
@@ -57,8 +58,6 @@
           "origin": "https://uber.dev/"
         }
       ],
-      "@config-plugins/react-native-webrtc",
-      "@daily-co/config-plugin-rn-daily-js",
       [
         "expo-build-properties",
         {
@@ -73,6 +72,14 @@
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {
+        "origin": "https://uber.dev/"
+      },
+      "eas": {
+        "projectId": "caeb769f-ceab-4749-859a-20ddac1b5d47"
+      }
     }
   }
 }

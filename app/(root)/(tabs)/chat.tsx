@@ -1,4 +1,3 @@
-// app/(root)/(tabs)/chat.tsx
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import {
   View,
@@ -29,6 +28,8 @@ import MaskedView from "@react-native-masked-view/masked-view";
 import * as Clipboard from "expo-clipboard";
 import openai from "../../../lib/openai";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { MathJaxSvg } from 'react-native-mathjax-html-to-svg';
+import { marked } from 'marked';
 
 type Message = {
   id: string;
@@ -36,7 +37,7 @@ type Message = {
   isUser: boolean;
   liked?: boolean | null;
   originalUserMessageId?: string;
-  isDelivered?: boolean; // Track delivery status for AI messages
+  isDelivered?: boolean;
 };
 
 type Conversation = {
@@ -74,7 +75,7 @@ export default function Chat() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [editText, setEditText] = useState("");
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
-  const [contentPaddingBottom, setContentPaddingBottom] = useState(screenHeight * 0.25);
+  const [contentPaddingBottom, setContentPaddingBottom] = useState<number>(120);
   const [convId, setConvId] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isAtBottom, setIsAtBottom] = useState(true);
@@ -187,6 +188,36 @@ export default function Chat() {
     };
   }, [gradientAnimation, dot1Animation, dot2Animation, dot3Animation]);
 
+  useEffect(() => {
+    const kbSub = keyboardOffset.addListener(({ value }) => {
+      setContentPaddingBottom(value + (inputTotalHeight as any)._value + 20);
+      if (isAtBottomRef.current) {
+        setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
+      }
+    });
+
+    const inputSub = inputTotalHeight.addListener(({ value }) => {
+      setContentPaddingBottom((keyboardOffset as any)._value + value + 20);
+      if (isAtBottomRef.current) {
+        setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
+      }
+    });
+
+    return () => {
+      keyboardOffset.removeListener(kbSub);
+      inputTotalHeight.removeListener(inputSub);
+    };
+  }, []);
+
+  const handleEditingBarLayout = (event: any) => {
+    const height = event.nativeEvent.layout.height;
+    if (editingMessageId) {
+      inputTotalHeight.setValue(inputHeight + height);
+    } else {
+      inputTotalHeight.setValue(inputHeight);
+    }
+  };
+
   const start = gradientAnimation.interpolate({
     inputRange: [0, 1],
     outputRange: [0, 1],
@@ -289,7 +320,6 @@ export default function Chat() {
           }
         }
 
-        // Start typing animation with batching for smoother updates (2 chars per tick)
         const chars = response.split('');
         let currentText = '';
         let i = 0;
@@ -315,7 +345,7 @@ export default function Chat() {
               setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 0);
             }
           }
-        }, 40); // Adjusted interval for batching
+        }, 40);
       } catch (error) {
         console.error("OpenAI API error:", error);
         setMessages((prev) =>
@@ -393,7 +423,6 @@ export default function Chat() {
         await AsyncStorage.setItem("conv_list", JSON.stringify(list));
       }
 
-      // Start typing animation with batching for smoother updates (2 chars per tick)
       const chars = response.split('');
       let currentText = '';
       let i = 0;
@@ -419,7 +448,7 @@ export default function Chat() {
             setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 0);
           }
         }
-      }, 40); // Adjusted interval for batching
+      }, 40);
     } catch (error) {
       console.error("OpenAI API error:", error);
       setMessages((prev) =>
@@ -491,7 +520,6 @@ export default function Chat() {
   const handleInputLayout = (event: any) => {
     const height = event.nativeEvent.layout.height;
     inputTotalHeight.setValue(height);
-    setContentPaddingBottom(height + screenHeight * 0.25);
   };
 
   const startNewChat = () => {
@@ -540,6 +568,15 @@ export default function Chat() {
                   <Text style={[styles.aiHeaderText, { opacity: 0 }]}>TalkAI</Text>
                 </LinearGradient>
               </MaskedView>
+              <View style={{ marginLeft: 4, width: 20, height: 20, borderRadius: 10, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' }}>
+                <LinearGradient
+                  colors={["#3b82f6", "#9333ea", "#f43f5e"]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
+                />
+                <MaterialIcons name="auto-awesome" size={14} color="#fff" />
+              </View>
               {!item.isDelivered && item.text === '' && (
                 <View style={styles.typingDots}>
                   <Animated.View
@@ -554,7 +591,13 @@ export default function Chat() {
                 </View>
               )}
             </View>
-            <Text style={styles.aiMessageText}>{item.text}</Text>
+            <MathJaxSvg 
+              fontSize={16}
+              color="#0b1220"
+              fontCache={true}
+            >
+              {marked(item.text)}
+            </MathJaxSvg>
             {item.isDelivered && (
               <View style={styles.aiActionsRow}>
                 <View style={{ position: 'relative' }}>
@@ -627,6 +670,7 @@ export default function Chat() {
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
       >
         <View style={styles.header}>
           <TouchableOpacity
@@ -703,118 +747,120 @@ export default function Chat() {
           />
         </View>
 
-        <View style={styles.inputContainer}>
-          {showAnimation && (
-            <View style={styles.bottomChips}>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.scrollContainer}
-              >
-                {suggestionChips.map((chip, i) => (
-                  <TouchableOpacity
-                    key={i}
-                    style={styles.scrollBtn}
-                    onPress={() => handleChipPress(chip)}
-                  >
-                    <Text style={styles.scrollBtnText}>{chip}</Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-            </View>
-          )}
-
-          {showScrollToBottom && (
-            <Animated.View
-              style={{
-                bottom: Animated.add(keyboardOffset, Animated.add(inputTotalHeight, 20)),
-                position: "absolute",
-                alignSelf: "center",
-                zIndex: 10,
-              }}
-            >
-              <TouchableOpacity
-                style={styles.scrollToBottom}
-                onPress={() => scrollRef.current?.scrollToEnd({ animated: true })}
-              >
-                <Ionicons name="arrow-down" size={24} color="#fff" />
-              </TouchableOpacity>
-            </Animated.View>
-          )}
-
-          <Animated.View
-            style={[styles.container, { bottom: keyboardOffset }]}
-          >
-            <AnimatedLinearGradient
-              colors={["#93c5fd", "#60a5fa", "#a5b4fc", "#f0abfc", "#93c5fd"]}
-              start={[start as any, 0]}
-              end={[0, end as any]}
-              style={styles.glowWrapper}
-              onLayout={handleInputLayout}
-            >
-              <View style={[styles.inputBar, { height: inputHeight }]}>
-                <TouchableOpacity onPress={() => textInputRef.current?.focus()}>
-                  <Ionicons name="add" size={22} color="#6B7280" />
-                </TouchableOpacity>
-                <TextInput
-                  ref={textInputRef}
-                  style={[styles.input, { minHeight: 58, maxHeight: 120 }]}
-                  value={inputText}
-                  onChangeText={setInputText}
-                  placeholder="Ask TalkAI"
-                  placeholderTextColor="#6b7280"
-                  multiline
-                  onContentSizeChange={handleContentSizeChange}
-                  returnKeyType="send"
-                  onSubmitEditing={() => {
-                    if (Platform.OS !== "ios") sendMessage();
-                  }}
-                />
-                <View style={styles.actions}>
-                  {isGenerating ? (
+        <SafeAreaView style={{ width: "100%" }}>
+          <View style={styles.inputContainer}>
+            {showAnimation && (
+              <View style={styles.bottomChips}>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.scrollContainer}
+                >
+                  {suggestionChips.map((chip, i) => (
                     <TouchableOpacity
-                      style={[styles.iconBtn, styles.sendBtn]}
-                      onPress={stopGenerating}
-                      accessibilityLabel="Stop generating"
+                      key={i}
+                      style={styles.scrollBtn}
+                      onPress={() => handleChipPress(chip)}
                     >
-                      <Ionicons name="square" size={18} color="#fff" />
+                      <Text style={styles.scrollBtnText}>{chip}</Text>
                     </TouchableOpacity>
-                  ) : inputText.trim().length === 0 ? (
-                    <TouchableOpacity
-                      style={styles.iconBtn}
-                      onPress={() => textInputRef.current?.focus()}
-                      accessibilityLabel="Voice input"
-                    >
-                      <Feather name="mic" size={18} color="#2563eb" />
-                    </TouchableOpacity>
-                  ) : (
-                    <TouchableOpacity
-                      style={[styles.iconBtn, styles.sendBtn]}
-                      onPress={sendMessage}
-                      accessibilityLabel="Send message"
-                    >
-                      <Ionicons name="send" size={18} color="#fff" />
-                    </TouchableOpacity>
-                  )}
-                 <TouchableOpacity
-  style={[styles.iconBtn, { marginLeft: 8 }]}
-  onPress={() => router.push("/audioconversation")}
->
-  <MaterialIcons name="auto-awesome" size={18} color="#2563eb" />
-</TouchableOpacity>
-                </View>
+                  ))}
+                </ScrollView>
               </View>
-              {editingMessageId && (
-                <View style={styles.editingBar}>
-                  <Text style={styles.editingText}>Editing message…</Text>
-                  <TouchableOpacity onPress={cancelEdit}>
-                    <Text style={styles.editCancel}>Cancel</Text>
+            )}
+
+            {showScrollToBottom && (
+              <Animated.View
+                style={{
+                  bottom: Animated.add(keyboardOffset, Animated.add(inputTotalHeight, 20)),
+                  position: "absolute",
+                  alignSelf: "center",
+                  zIndex: 10,
+                }}
+              >
+                <TouchableOpacity
+                  style={styles.scrollToBottom}
+                  onPress={() => scrollRef.current?.scrollToEnd({ animated: true })}
+                >
+                  <Ionicons name="arrow-down" size={24} color="#fff" />
+                </TouchableOpacity>
+              </Animated.View>
+            )}
+
+            <Animated.View
+              style={[styles.container, { bottom: keyboardOffset }]}
+            >
+              <AnimatedLinearGradient
+                colors={["#93c5fd", "#60a5fa", "#a5b4fc", "#f0abfc", "#93c5fd"]}
+                start={[start as any, 0]}
+                end={[0, end as any]}
+                style={styles.glowWrapper}
+                onLayout={handleInputLayout}
+              >
+                <View style={[styles.inputBar, { height: inputHeight }]}>
+                  <TouchableOpacity onPress={() => textInputRef.current?.focus()}>
+                    <Ionicons name="add" size={22} color="#6B7280" />
                   </TouchableOpacity>
+                  <TextInput
+                    ref={textInputRef}
+                    style={[styles.input, { minHeight: 58, maxHeight: 120 }]}
+                    value={inputText}
+                    onChangeText={setInputText}
+                    placeholder="Ask TalkAI"
+                    placeholderTextColor="#6b7280"
+                    multiline
+                    onContentSizeChange={handleContentSizeChange}
+                    returnKeyType="send"
+                    onSubmitEditing={() => {
+                      if (Platform.OS !== "ios") sendMessage();
+                    }}
+                  />
+                  <View style={styles.actions}>
+                    {isGenerating ? (
+                      <TouchableOpacity
+                        style={[styles.iconBtn, styles.sendBtn]}
+                        onPress={stopGenerating}
+                        accessibilityLabel="Stop generating"
+                      >
+                        <Ionicons name="square" size={18} color="#fff" />
+                      </TouchableOpacity>
+                    ) : inputText.trim().length === 0 ? (
+                      <TouchableOpacity
+                        style={styles.iconBtn}
+                        onPress={() => textInputRef.current?.focus()}
+                        accessibilityLabel="Voice input"
+                      >
+                        <Feather name="mic" size={18} color="#2563eb" />
+                      </TouchableOpacity>
+                    ) : (
+                      <TouchableOpacity
+                        style={[styles.iconBtn, styles.sendBtn]}
+                        onPress={sendMessage}
+                        accessibilityLabel="Send message"
+                      >
+                        <Ionicons name="send" size={18} color="#fff" />
+                      </TouchableOpacity>
+                    )}
+                    <TouchableOpacity
+                      style={[styles.iconBtn, { marginLeft: 8 }]}
+                      onPress={() => router.push("/audioconversation")}
+                    >
+                      <MaterialIcons name="auto-awesome" size={18} color="#2563eb" />
+                    </TouchableOpacity>
+                  </View>
                 </View>
-              )}
-            </AnimatedLinearGradient>
-          </Animated.View>
-        </View>
+                {editingMessageId && (
+                  <View style={styles.editingBar} onLayout={handleEditingBarLayout}>
+                    <Text style={styles.editingText}>Editing message…</Text>
+                    <TouchableOpacity onPress={cancelEdit}>
+                      <Text style={styles.editCancel}>Cancel</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+              </AnimatedLinearGradient>
+            </Animated.View>
+          </View>
+        </SafeAreaView>
 
         <Modal
           visible={showEditModal}
@@ -957,6 +1003,7 @@ const styles = StyleSheet.create({
       android: { elevation: 10 },
     }),
     backgroundColor: "transparent",
+    marginBottom: -20,
   },
   inputBar: {
     flexDirection: "row",
@@ -965,6 +1012,7 @@ const styles = StyleSheet.create({
     borderRadius: 36,
     paddingHorizontal: 14,
     paddingVertical: 8,
+    marginBottom: 0,
   },
   input: {
     flex: 1,

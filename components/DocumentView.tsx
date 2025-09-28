@@ -1,19 +1,17 @@
-// components/DocumentView.tsx
 import React, { useContext, useEffect, useState } from "react";
 import {
   Text,
   View,
   StyleSheet,
-  Dimensions,
   TouchableOpacity,
   ScrollView,
   Modal,
   TextInput,
   Pressable,
+  Share,
+  Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import LottieView from "lottie-react-native";
-import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { DocumentContext, DocItem } from "@/context/DocumentContext";
 import { useLocalSearchParams, router } from "expo-router";
@@ -23,25 +21,50 @@ import Note from "@/app/document/[docId]/note";
 import Summary from "@/app/document/[docId]/summary";
 import Settings from "@/app/document/[docId]/settings";
 
-const { width } = Dimensions.get("window");
+interface ExtendedDocItem extends DocItem {
+  fileId: string;
+  name: string;
+  source: string;
+  uploadedAt: number;
+  ext: string;
+  localUri?: string;
+  remoteUrl?: string;
+}
 
 const DocumentView = () => {
-  const { documents, updateDocument, deleteDocument } =
-    useContext(DocumentContext)!;
+  const { documents, updateDocument, deleteDocument } = useContext(DocumentContext)!;
   const { docId } = useLocalSearchParams<{ docId: string }>();
-  const [document, setDocument] = useState<DocItem | null>(null);
+  const [document, setDocument] = useState<ExtendedDocItem | null>(null);
   const [activeTab, setActiveTab] = useState("note");
   const [menuVisible, setMenuVisible] = useState(false);
   const [renameVisible, setRenameVisible] = useState(false);
   const [deleteVisible, setDeleteVisible] = useState(false);
+  const [propertiesVisible, setPropertiesVisible] = useState(false);
   const [newName, setNewName] = useState("");
-  const headerLottie = require("@/assets/images/askai.json");
+  const [isUploadedToCloud, setIsUploadedToCloud] = useState<boolean>(false);
 
   useEffect(() => {
+    if (!docId) {
+      console.error("No docId provided");
+      router.back();
+      return;
+    }
+
     const doc = documents.find((d: DocItem) => d.fileId === docId);
     if (doc) {
-      setDocument(doc);
+      const extendedDoc: ExtendedDocItem = {
+        ...doc,
+        fileId: doc.fileId,
+        name: doc.name,
+        source: doc.source,
+        uploadedAt: doc.uploadedAt,
+        ext: doc.ext || "pdf",
+        localUri: (doc as any).localUri,
+        remoteUrl: (doc as any).remoteUrl,
+      };
+      setDocument(extendedDoc);
       setNewName(doc.name);
+      setIsUploadedToCloud(Boolean((doc as any).uploadedToCloud));
     } else {
       console.error(`Document with ID ${docId} not found`);
       router.back();
@@ -58,7 +81,8 @@ const DocumentView = () => {
     );
   }
 
-  // Handle rename confirm
+  const formattedUploadedAt = new Date(document.uploadedAt).toLocaleString();
+
   const handleRename = () => {
     if (newName.trim() && document) {
       updateDocument(document.fileId, { name: newName.trim() });
@@ -68,7 +92,6 @@ const DocumentView = () => {
     setMenuVisible(false);
   };
 
-  // Handle delete confirm
   const handleDelete = () => {
     if (document) {
       deleteDocument(document.fileId);
@@ -78,110 +101,150 @@ const DocumentView = () => {
     setMenuVisible(false);
   };
 
+  const handleShare = async () => {
+    try {
+      await Share.share({
+        title: document.name,
+        message: `${document.name} — from ${document.source}\n\nUploaded: ${formattedUploadedAt}`,
+      });
+    } catch (error) {
+      console.error("Share error:", error);
+      Alert.alert("Unable to share", "An error occurred while trying to share the document.");
+    }
+    setMenuVisible(false);
+  };
+
+  const handleUploadToCloud = async () => {
+    try {
+      setIsUploadedToCloud(true);
+      Alert.alert("Uploaded", "Document marked as uploaded to cloud (local only).");
+    } catch (error) {
+      console.error("Upload error:", error);
+      Alert.alert("Upload failed", "Could not upload to cloud.");
+    }
+    setMenuVisible(false);
+  };
+
+  const renderHeader = () => (
+    <View style={styles.header}>
+      <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+        <Ionicons name="arrow-back" size={20} color="#111827" />
+      </TouchableOpacity>
+      <View style={styles.headerContent}>
+        <View style={styles.headerTextWrap}>
+          <Text style={styles.title} numberOfLines={1}>
+            {document.name}
+          </Text>
+          <TouchableOpacity style={styles.moreBtn} onPress={() => setMenuVisible(true)}>
+            <Ionicons name="ellipsis-vertical" size={20} color="#111827" />
+          </TouchableOpacity>
+        </View>
+        <View style={styles.fileMetaRow}>
+          <Text style={styles.fileSource}>{document.source}</Text>
+          <Text style={styles.fileDot}> · </Text>
+          <Text style={styles.fileTime}>{formattedUploadedAt}</Text>
+        </View>
+        <View style={styles.navContainer}>
+          <DocNav activeTab={activeTab} setActiveTab={setActiveTab} />
+        </View>
+      </View>
+    </View>
+  );
+
+  const renderTabContent = () => {
+    switch (activeTab) {
+      case "note":
+        return <Note document={document} />;
+      case "summary":
+        return <Summary />;
+      case "askai":
+        return <AskAI />;
+      case "settings":
+        return <Settings />;
+      default:
+        return null;
+    }
+  };
+
+  const docSize = (document as any)?.size;
+
   return (
     <SafeAreaView style={styles.safe}>
-      <View style={{ flex: 1 }}>
-        <ScrollView
-          style={{ flex: 1 }}
-          contentContainerStyle={{
-            paddingBottom: activeTab === "askai" ? 120 : 40,
-          }}
-        >
-          {/* Header */}
-          <View style={styles.header}>
-            <LottieView
-              source={headerLottie}
-              autoPlay
-              loop
-              style={{ width, height: 250 }}
-            />
-            <LinearGradient
-              colors={["transparent", "#f8fafc"]}
-              style={styles.gradient}
-            />
+      <View style={styles.container}>
+        {renderHeader()}
+        <View style={styles.contentContainer}>
+          {activeTab === "askai" ? (
+            <View style={{ flex: 1 }}>{renderTabContent()}</View>
+          ) : (
+            <ScrollView style={{ flex: 1 }} contentContainerStyle={{ flexGrow: 1 }}>
+              {renderTabContent()}
+            </ScrollView>
+          )}
+        </View>
 
-            <View style={styles.headerTextWrap}>
-              <Text style={styles.title} numberOfLines={1}>
-                {document.name}
-              </Text>
-              <TouchableOpacity
-                style={styles.moreBtn}
-                onPress={() => setMenuVisible(true)}
-              >
-                <Ionicons name="ellipsis-vertical" size={20} color="#111827" />
-              </TouchableOpacity>
-            </View>
-            <View style={styles.fileMetaRow}>
-              <Text style={styles.fileSource}>{document.source}</Text>
-              <Text style={styles.fileDot}> · </Text>
-              <Text style={styles.fileTime}>
-                {new Date(document.uploadedAt).toLocaleDateString()}
-              </Text>
-            </View>
-            <TouchableOpacity
-              onPress={() => router.back()}
-              style={styles.backBtn}
-            >
-              <Ionicons name="arrow-back" size={24} color="#111827" />
-            </TouchableOpacity>
-          </View>
-
-          {/* Navigation + Tab Content */}
-          <View style={styles.container}>
-            <DocNav activeTab={activeTab} setActiveTab={setActiveTab} />
-            <View style={{ marginTop: 20 }}>
-              {activeTab === "note" && <Note document={document} />}
-              {activeTab === "summary" && <Summary />}
-              {activeTab === "settings" && <Settings />}
-            </View>
-          </View>
-        </ScrollView>
-
-        {/* AskAI fixed at bottom */}
-        {activeTab === "askai" && (
-          <View style={styles.askAIContainer}>
-            <AskAI />
-          </View>
-        )}
-
-        {/* ===== Overlay Menu ===== */}
         <Modal
           transparent
           visible={menuVisible}
-          animationType="fade"
+          animationType="slide"
           onRequestClose={() => setMenuVisible(false)}
         >
-          <Pressable
-            style={styles.overlay}
-            onPress={() => setMenuVisible(false)}
-          >
-            <View style={styles.menuBox}>
+          <Pressable style={styles.overlay} onPress={() => setMenuVisible(false)}>
+            <Pressable style={styles.sheetContainer}>
+              <View style={styles.sheetHandle} />
+              <View style={styles.filePreview}>
+                <View style={styles.fileIconWrap}>
+                  <View style={styles.wordIconBox}>
+                    <MaterialIcons name="description" size={22} color="#1E3A8A" />
+                  </View>
+                </View>
+                <View style={styles.fileMeta}>
+                  <Text style={styles.previewTitle} numberOfLines={2}>
+                    {document.name}
+                  </Text>
+                  <Text style={styles.previewSub}>
+                    {document.source} · {formattedUploadedAt}
+                  </Text>
+                </View>
+              </View>
+              <View style={styles.divider} />
+              <TouchableOpacity style={styles.menuItem} onPress={handleShare} activeOpacity={0.7}>
+                <MaterialIcons name="share" size={22} color="#111827" />
+                <Text style={styles.menuText}>Share</Text>
+              </TouchableOpacity>
               <TouchableOpacity
                 style={styles.menuItem}
-                onPress={() => {
-                  setRenameVisible(true);
-                  setMenuVisible(false);
-                }}
+                onPress={handleUploadToCloud}
+                activeOpacity={0.7}
               >
-                <MaterialIcons name="edit" size={20} color="#2563eb" />
-                <Text style={styles.menuText}>Rename</Text>
+                <MaterialIcons name="cloud-upload" size={22} color="#111827" />
+                <Text style={styles.menuText}>Upload to Cloud</Text>
               </TouchableOpacity>
-
               <TouchableOpacity
                 style={styles.menuItem}
                 onPress={() => {
                   setDeleteVisible(true);
                   setMenuVisible(false);
                 }}
+                activeOpacity={0.7}
               >
-                <MaterialIcons name="delete" size={20} color="#dc2626" />
-                <Text style={styles.menuText}>Delete</Text>
+                <MaterialIcons name="delete" size={22} color="#dc2626" />
+                <Text style={[styles.menuText, { color: "#dc2626" }]}>Delete</Text>
               </TouchableOpacity>
-            </View>
+              <TouchableOpacity
+                style={styles.menuItem}
+                onPress={() => {
+                  setPropertiesVisible(true);
+                  setMenuVisible(false);
+                }}
+                activeOpacity={0.7}
+              >
+                <MaterialIcons name="info" size={22} color="#111827" />
+                <Text style={styles.menuText}>Properties</Text>
+              </TouchableOpacity>
+            </Pressable>
           </Pressable>
         </Modal>
 
-        {/* ===== Rename Modal ===== */}
         <Modal
           transparent
           visible={renameVisible}
@@ -215,7 +278,6 @@ const DocumentView = () => {
           </View>
         </Modal>
 
-        {/* ===== Delete Modal ===== */}
         <Modal
           transparent
           visible={deleteVisible}
@@ -224,9 +286,7 @@ const DocumentView = () => {
         >
           <View style={styles.centeredOverlay}>
             <View style={styles.confirmBox}>
-              <Text style={styles.confirmTitle}>
-                Are you sure you want to delete?
-              </Text>
+              <Text style={styles.confirmTitle}>Are you sure you want to delete?</Text>
               <View style={styles.confirmActions}>
                 <TouchableOpacity
                   style={[styles.actionBtn, { backgroundColor: "#e5e7eb" }]}
@@ -244,6 +304,43 @@ const DocumentView = () => {
             </View>
           </View>
         </Modal>
+
+        <Modal
+          transparent
+          visible={propertiesVisible}
+          animationType="fade"
+          onRequestClose={() => setPropertiesVisible(false)}
+        >
+          <View style={styles.centeredOverlay}>
+            <View style={styles.confirmBox}>
+              <Text style={styles.confirmTitle}>Properties</Text>
+              <View style={{ marginBottom: 12 }}>
+                <Text style={styles.propLabel}>Name</Text>
+                <Text style={styles.propValue}>{document.name}</Text>
+                <Text style={styles.propLabel}>Source</Text>
+                <Text style={styles.propValue}>{document.source}</Text>
+                <Text style={styles.propLabel}>Uploaded</Text>
+                <Text style={styles.propValue}>{formattedUploadedAt}</Text>
+                {typeof docSize !== "undefined" && docSize !== null ? (
+                  <>
+                    <Text style={styles.propLabel}>Size</Text>
+                    <Text style={styles.propValue}>{String(docSize)}</Text>
+                  </>
+                ) : null}
+                <Text style={styles.propLabel}>Uploaded to cloud</Text>
+                <Text style={styles.propValue}>{isUploadedToCloud ? "Yes" : "No"}</Text>
+              </View>
+              <View style={styles.confirmActions}>
+                <TouchableOpacity
+                  style={[styles.actionBtn, { backgroundColor: "#e5e7eb" }]}
+                  onPress={() => setPropertiesVisible(false)}
+                >
+                  <Text>Close</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
       </View>
     </SafeAreaView>
   );
@@ -252,29 +349,29 @@ const DocumentView = () => {
 export default DocumentView;
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: "#fff" },
-  container: { paddingHorizontal: 20, marginTop: -40 },
-  header: {
-    position: "relative",
-    width: "100%",
-    height: 250,
-    backgroundColor: "#f8fafc",
+  safe: {
+    flex: 1,
+    backgroundColor: "#fff",
   },
-  gradient: {
-    position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: 120,
+  container: {
+    flex: 1,
+    flexDirection: "column",
+  },
+  header: {
+    width: "100%",
+    backgroundColor: "#f8fafc",
+    paddingTop: 25,
+  },
+  headerContent: {
+    paddingHorizontal: 10,
+    paddingBottom: 12,
   },
   headerTextWrap: {
-    position: "absolute",
-    bottom: 72,
-    left: 20,
-    right: 20,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+    marginBottom: 8,
+    paddingTop: 16,
   },
   title: {
     fontSize: 18,
@@ -292,48 +389,104 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   fileMetaRow: {
-    position: "absolute",
-    bottom: 50,
-    left: 20,
     flexDirection: "row",
     alignItems: "center",
+    marginBottom: 8,
   },
-  fileSource: { color: "#6B7280", fontSize: 13 },
-  fileDot: { color: "#6B7280", fontSize: 13 },
-  fileTime: { color: "#6B7280", fontSize: 13 },
+  fileSource: {
+    color: "#6B7280",
+    fontSize: 13,
+  },
+  fileDot: {
+    color: "#6B7280",
+    fontSize: 13,
+  },
+  fileTime: {
+    color: "#6B7280",
+    fontSize: 13,
+  },
   backBtn: {
     position: "absolute",
-    top: 18,
-    left: 18,
-    padding: 8,
+    top: 10,
+    left: 10,
+    padding: 4,
     backgroundColor: "rgba(156,163,175,0.15)",
     borderRadius: 12,
   },
-  loadingBox: { flex: 1, alignItems: "center", justifyContent: "center" },
-  loadingText: { color: "#374151", fontSize: 16 },
-  askAIContainer: {
-    position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: "#fff",
-    paddingBottom: 12,
+  navContainer: {
+    backgroundColor: "#f8fafc",
+  },
+  contentContainer: {
+    flex: 1,
+  },
+  loadingBox: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  loadingText: {
+    color: "#374151",
+    fontSize: 16,
   },
   overlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.3)",
     justifyContent: "flex-end",
   },
-  menuBox: {
+  sheetContainer: {
     backgroundColor: "#fff",
-    padding: 16,
+    paddingTop: 12,
+    paddingBottom: 28,
+    paddingHorizontal: 16,
     borderTopLeftRadius: 16,
     borderTopRightRadius: 16,
+  },
+  sheetHandle: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: "#e5e7eb",
+    alignSelf: "center",
+    marginBottom: 12,
+  },
+  filePreview: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 12,
+  },
+  fileIconWrap: {
+    marginRight: 12,
+  },
+  wordIconBox: {
+    width: 48,
+    height: 48,
+    borderRadius: 6,
+    backgroundColor: "#eef2ff",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  fileMeta: {
+    flex: 1,
+  },
+  previewTitle: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#111827",
+  },
+  previewSub: {
+    color: "#6B7280",
+    fontSize: 13,
+    marginTop: 4,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: "#f1f5f9",
+    marginVertical: 8,
   },
   menuItem: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 12,
+    paddingVertical: 14,
   },
   menuText: {
     marginLeft: 12,
@@ -376,5 +529,15 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderRadius: 8,
     marginLeft: 10,
+  },
+  propLabel: {
+    color: "#6B7280",
+    fontSize: 12,
+    marginTop: 6,
+  },
+  propValue: {
+    color: "#111827",
+    fontSize: 14,
+    fontWeight: "500",
   },
 });

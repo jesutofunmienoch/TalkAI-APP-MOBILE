@@ -149,7 +149,7 @@ const Home = () => {
     try {
       await new Promise(resolve => setTimeout(resolve, 1500));
       router.push({
-        pathname: "/document-view" as const,
+        pathname: "/(root)/document-view" as const,
         params: { docId: doc.fileId },
       });
     } catch (error: any) {
@@ -596,7 +596,7 @@ const styles = StyleSheet.create({
   emptySubtitle: { fontSize: 14, color: "#6B7280", textAlign: "center", marginTop: 6, marginBottom: 12 },
   uploadBtn: {
     marginTop: 10,
-    backgroundColor: "#16A34A",
+    backgroundColor: "#111827",
     paddingHorizontal: 18,
     paddingVertical: 10,
     borderRadius: 999,
