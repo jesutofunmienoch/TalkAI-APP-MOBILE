@@ -22,11 +22,10 @@ import { icons } from "@/constants";
 import { DocumentContext, DocItem } from "@/context/DocumentContext";
 import { useUser, useAuth } from "@clerk/clerk-expo";
 import { router } from "expo-router";
-import * as DocumentPicker from 'expo-document-picker';
-import * as FileSystem from 'expo-file-system/legacy';
-
+import * as DocumentPicker from "expo-document-picker";
+import * as LegacyFileSystem from "expo-file-system/legacy"; // Use legacy import for readAsStringAsync
+import { Client, Functions, ID, Storage } from "react-native-appwrite";
 const { width, height } = Dimensions.get("window");
-
 const ICONS = {
   pdf: require("@/assets/images/pdf.png"),
   word: require("@/assets/images/word.png"),
@@ -34,25 +33,34 @@ const ICONS = {
   ppt: require("@/assets/images/ppt.png"),
   generic: require("@/assets/images/no-document.png"),
 };
-
 const ALLOWED_EXTS = ["pdf", "doc", "docx", "ppt", "pptx", "xls", "xlsx", "csv"];
-
 const Home = () => {
   const { user, isLoaded } = useUser();
-  const { signOut } = useAuth();
+  const { signOut, getToken } = useAuth();
   const { documents, setDocuments, addDocument, updateDocument, deleteDocument } = useContext(DocumentContext)!;
   const [searchQuery, setSearchQuery] = useState("");
   const [seeMoreSearchQuery, setSeeMoreSearchQuery] = useState("");
   const [menuVisible, setMenuVisible] = useState(false);
   const [seeMoreVisible, setSeeMoreVisible] = useState(false);
+  const [propertiesVisible, setPropertiesVisible] = useState(false);
   const [selectedDoc, setSelectedDoc] = useState<DocItem | null>(null);
   const [errorMsg, setErrorMsg] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [isCloudUploading, setIsCloudUploading] = useState(false);
+  const [renameVisible, setRenameVisible] = useState(false);
+  const [newName, setNewName] = useState("");
   const errorAnim = useRef(new Animated.Value(-100)).current;
   const headerLottie = require("@/assets/images/others.json");
   const noDataLottie = require("@/assets/images/No-Data.json");
-  const loadingLottie = require("@/assets/images/loading.json");
-
+  const cloudAnimation = require("@/assets/images/cloud.json");
+  const checkIcon = require("@/assets/images/check.png");
+  // Initialize Appwrite client once
+  const client = useRef<Client | null>(null);
+  useEffect(() => {
+    client.current = new Client()
+      .setEndpoint(process.env.EXPO_PUBLIC_APPWRITE_ENDPOINT || "https://cloud.appwrite.io/v1")
+      .setProject(process.env.EXPO_PUBLIC_APPWRITE_PROJECT_ID || "68d99d2200263ed6ea89");
+  }, []);
   useEffect(() => {
     if (errorMsg) {
       Animated.timing(errorAnim, {
@@ -68,13 +76,11 @@ const Home = () => {
       }).start();
     }
   }, [errorMsg]);
-
   const getExt = (filename: string) => {
     if (!filename) return "";
     const parts = filename.split(".");
     return parts.length > 1 ? parts[parts.length - 1].toLowerCase() : "";
   };
-
   const mapExtToIcon = (ext: string) => {
     if (["pdf"].includes(ext)) return ICONS.pdf;
     if (["doc", "docx"].includes(ext)) return ICONS.word;
@@ -82,7 +88,6 @@ const Home = () => {
     if (["ppt", "pptx"].includes(ext)) return ICONS.ppt;
     return ICONS.generic;
   };
-
   const formatRelativeTime = (timestamp: number) => {
     const now = Date.now();
     const diff = Math.floor((now - timestamp) / 1000);
@@ -92,7 +97,6 @@ const Home = () => {
     if (diff < 604800) return `${Math.floor(diff / 86400)}d ago`;
     return new Date(timestamp).toLocaleDateString();
   };
-
   const handlePickDocument = () => {
     uploadDocument(
       user,
@@ -103,7 +107,6 @@ const Home = () => {
       addDocument
     );
   };
-
   const toggleFavorite = async (doc: DocItem, value: boolean) => {
     try {
       if (!user?.id) {
@@ -119,7 +122,6 @@ const Home = () => {
       setTimeout(() => setErrorMsg(""), 2000);
     }
   };
-
   const handleDeleteDocument = async (doc: DocItem) => {
     try {
       if (!user?.id) {
@@ -128,7 +130,7 @@ const Home = () => {
         return;
       }
       if (doc.localUri) {
-        await FileSystem.deleteAsync(doc.localUri);
+        await LegacyFileSystem.deleteAsync(doc.localUri);
       }
       await deleteDocument(doc.fileId);
       setMenuVisible(false);
@@ -138,12 +140,102 @@ const Home = () => {
       setTimeout(() => setErrorMsg(""), 2000);
     }
   };
-
+  const uploadToAppwrite = async (doc: DocItem, userId: string) => {
+    if (!client.current) {
+      throw new Error("Appwrite client not initialized.");
+    }
+    const functions = new Functions(client.current);
+    try {
+      // Read file as base64 using legacy API
+      const base64 = await LegacyFileSystem.readAsStringAsync(doc.localUri!, { encoding: 'base64' });
+      // Get Clerk JWT
+      const jwt = await getToken({ template: 'appwrite' }); // Assume you have a Clerk JWT template named 'appwrite'
+      if (!jwt) {
+        throw new Error("Failed to get JWT from Clerk.");
+      }
+      // Prepare payload
+      const payload = {
+        jwt,
+        userId,
+        name: doc.name,
+        ext: doc.ext,
+        uploadedAt: doc.uploadedAt,
+        favorite: doc.favorite,
+        fileId: doc.fileId,
+        content: doc.content || "",
+        fileData: base64,
+        size: doc.size || 0,
+      };
+      // Execute function
+      const execution = await functions.createExecution(
+        '68daae8e00061a5126ca',
+        JSON.stringify(payload),
+        false
+      );
+      const response = JSON.parse(execution.responseBody);
+      if (!response.success) {
+        throw new Error(response.error);
+      }
+      // Fetch signed download URL for viewing
+      const clientForUrl = new Client()
+        .setEndpoint(process.env.EXPO_PUBLIC_APPWRITE_ENDPOINT || "https://cloud.appwrite.io/v1")
+        .setProject(process.env.EXPO_PUBLIC_APPWRITE_PROJECT_ID || "68d99d2200263ed6ea89");
+      // Removed setJWT as bucket is assumed public
+      const storageForUrl = new Storage(clientForUrl);
+      const downloadUrl = storageForUrl.getFileDownload("68d99e310009199afc3a", response.appwriteFileId).toString();
+      // Update local doc
+      await updateDocument(doc.fileId, { isCloudSynced: true, source: "Cloud", appwriteFileId: response.appwriteFileId });
+    } catch (error: any) {
+      throw new Error("Failed to upload via function: " + error.message);
+    }
+  };
+  const handleUploadToCloud = async (doc: DocItem) => {
+    try {
+      if (!user?.id || !client.current) {
+        setErrorMsg("User or client not ready. Please log in.");
+        setTimeout(() => setErrorMsg(""), 2000);
+        return;
+      }
+      setIsCloudUploading(true);
+      await uploadToAppwrite(doc, user.id);
+      setMenuVisible(false);
+    } catch (error: any) {
+      console.error("Upload to cloud error:", error.message);
+      setErrorMsg("Could not upload to cloud. Please try again.");
+      setTimeout(() => setErrorMsg(""), 2000);
+    } finally {
+      setIsCloudUploading(false);
+    }
+  };
+  const handleRenameDocument = async () => {
+    if (!selectedDoc || !newName.trim()) {
+      setErrorMsg("Please enter a valid name.");
+      setTimeout(() => setErrorMsg(""), 2000);
+      return;
+    }
+    try {
+      if (!user?.id) {
+        setErrorMsg("User not authenticated. Please log in.");
+        setTimeout(() => setErrorMsg(""), 2000);
+        return;
+      }
+      const ext = getExt(selectedDoc.name);
+      const newFileName = `${newName.trim()}.${ext}`;
+      await updateDocument(selectedDoc.fileId, { name: newFileName });
+      setSelectedDoc({ ...selectedDoc, name: newFileName });
+      setRenameVisible(false);
+      setNewName("");
+      setMenuVisible(false);
+    } catch (error: any) {
+      console.error("Rename document error:", error.message);
+      setErrorMsg("Could not rename document. Please try again.");
+      setTimeout(() => setErrorMsg(""), 2000);
+    }
+  };
   const handleOpenMenu = (doc: DocItem) => {
     setSelectedDoc(doc);
     setMenuVisible(true);
   };
-
   const handleViewDocument = async (doc: DocItem) => {
     setIsLoading(true);
     try {
@@ -160,7 +252,6 @@ const Home = () => {
       setIsLoading(false);
     }
   };
-
   const handleSignOut = async () => {
     try {
       await signOut();
@@ -171,7 +262,6 @@ const Home = () => {
       Alert.alert("Error", "Error signing out. Please try again.");
     }
   };
-
   if (!isLoaded) {
     return (
       <SafeAreaView style={styles.safe}>
@@ -181,7 +271,6 @@ const Home = () => {
       </SafeAreaView>
     );
   }
-
   const displayName = user?.firstName ? user.firstName : "User";
   const filteredFavorites = documents
     .filter((d: DocItem) => d.favorite && d.name.toLowerCase().includes(searchQuery.toLowerCase()))
@@ -192,7 +281,6 @@ const Home = () => {
   const filteredAllDocuments = documents.filter((d: DocItem) =>
     d.name.toLowerCase().includes(seeMoreSearchQuery.toLowerCase())
   );
-
   return (
     <SafeAreaView style={styles.safe}>
       <ScrollView showsVerticalScrollIndicator={false}>
@@ -353,7 +441,7 @@ const Home = () => {
           activeOpacity={1}
           onPress={() => setMenuVisible(false)}
         >
-          <View style={[styles.modalContent, { minHeight: 400, maxHeight: height * 0.8 }]}>
+          <View style={[styles.modalContent, styles.modalShadow]}>
             <TouchableOpacity activeOpacity={1} onPress={() => {}}>
               {selectedDoc && (
                 <View style={styles.modalHeader}>
@@ -370,10 +458,17 @@ const Home = () => {
                   </View>
                 </View>
               )}
-              <View style={styles.menuOption}>
+              <TouchableOpacity
+                style={styles.menuOption}
+                onPress={() => {
+                  setRenameVisible(true);
+                  setMenuVisible(false);
+                  setNewName(selectedDoc?.name.split(".").slice(0, -1).join(".") || "");
+                }}
+              >
                 <Ionicons name="create-outline" size={20} color="#374151" />
                 <Text style={styles.menuText}>Rename</Text>
-              </View>
+              </TouchableOpacity>
               <View style={styles.menuOption}>
                 <Ionicons name="star-outline" size={20} color="#374151" />
                 <Text style={styles.menuText}>Favorite</Text>
@@ -389,26 +484,129 @@ const Home = () => {
                   style={{ marginLeft: "auto" }}
                 />
               </View>
-
-                <View style={styles.menuOption}>
-                  <MaterialIcons name="cloud-upload" size={20} color="#374151" />
-                  <Text style={styles.menuText}>Upload to Cloud</Text>
-              </View>
+              <TouchableOpacity
+                style={styles.menuOption}
+                onPress={() => selectedDoc && handleUploadToCloud(selectedDoc)}
+                disabled={selectedDoc?.isCloudSynced || isCloudUploading}
+              >
+                {isCloudUploading ? (
+                  <LottieView source={cloudAnimation} autoPlay loop style={{ width: 20, height: 20 }} />
+                ) : (
+                  <MaterialIcons name="cloud-upload" size={20} color={selectedDoc?.isCloudSynced ? "#d1d5db" : "#374151"} />
+                )}
+                <Text style={[styles.menuText, { color: selectedDoc?.isCloudSynced ? "#d1d5db" : "#374151", marginLeft: 12 }]}>
+                  {isCloudUploading ? "Uploading..." : "Upload to Cloud"}
+                </Text>
+                {selectedDoc?.isCloudSynced && (
+                  <Image source={checkIcon} style={{ width: 20, height: 20, marginLeft: "auto", tintColor: "green" }} />
+                )}
+              </TouchableOpacity>
               <View style={styles.menuOption}>
                 <Ionicons name="remove-circle-outline" size={20} color="#374151" />
                 <Text style={styles.menuText}>Remove from List</Text>
               </View>
-              <View style={styles.menuOption}>
+              <TouchableOpacity
+                style={styles.menuOption}
+                onPress={() => {
+                  Alert.alert(
+                    "Delete Document",
+                    "Are you sure you want to delete this document? This action cannot be undone.",
+                    [
+                      { text: "Cancel", style: "cancel" },
+                      { text: "Delete", style: "destructive", onPress: () => selectedDoc && handleDeleteDocument(selectedDoc) },
+                    ]
+                  );
+                }}
+              >
                 <Ionicons name="trash-outline" size={20} color="red" />
-                <TouchableOpacity onPress={() => selectedDoc && handleDeleteDocument(selectedDoc)}>
-                  <Text style={[styles.menuText, { color: "red" }]}>Delete</Text>
-                </TouchableOpacity>
-              </View>
-              <View style={styles.menuOption}>
+                <Text style={[styles.menuText, { color: "red" }]}>Delete</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.menuOption}
+                onPress={() => {
+                  setPropertiesVisible(true);
+                  setMenuVisible(false);
+                }}
+              >
                 <Ionicons name="information-circle-outline" size={20} color="#374151" />
                 <Text style={styles.menuText}>Properties</Text>
-              </View>
+              </TouchableOpacity>
               <TouchableOpacity onPress={() => setMenuVisible(false)} style={styles.closeMenuBtn}>
+                <Text style={{ color: "white", fontWeight: "700" }}>Close</Text>
+              </TouchableOpacity>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+      <Modal visible={renameVisible} animationType="slide" transparent>
+        <TouchableOpacity
+          style={[styles.modalOverlay, { justifyContent: "center" }]}
+          activeOpacity={1}
+          onPress={() => setRenameVisible(false)}
+        >
+          <View style={[styles.modalContent, styles.modalShadow, { minHeight: 200, maxHeight: height * 0.5 }]}>
+            <TouchableOpacity activeOpacity={1} onPress={() => {}}>
+              <Text style={styles.sectionTitle}>Rename Document</Text>
+              <TextInput
+                placeholder="Enter new name"
+                value={newName}
+                onChangeText={setNewName}
+                style={[styles.searchInput, { marginVertical: 10, backgroundColor: "#f9fafb", padding: 12, borderRadius: 8, borderWidth: 1, borderColor: "#e5e7eb" }]}
+                placeholderTextColor="#9CA3AF"
+              />
+              <View style={{ flexDirection: "row", justifyContent: "space-between", marginTop: 20 }}>
+                <TouchableOpacity
+                  onPress={() => setRenameVisible(false)}
+                  style={[styles.closeMenuBtn, { backgroundColor: "#6b7280" }]}
+                >
+                  <Text style={{ color: "white", fontWeight: "700" }}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={handleRenameDocument} style={styles.closeMenuBtn}>
+                  <Text style={{ color: "white", fontWeight: "700" }}>Save</Text>
+                </TouchableOpacity>
+              </View>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+      <Modal visible={propertiesVisible} animationType="slide" transparent>
+        <TouchableOpacity
+          style={[styles.modalOverlay, { justifyContent: "center" }]}
+          activeOpacity={1}
+          onPress={() => setPropertiesVisible(false)}
+        >
+          <View style={[styles.modalContent, styles.modalShadow, { minHeight: 300, maxHeight: height * 0.6 }]}>
+            <TouchableOpacity activeOpacity={1} onPress={() => {}}>
+              <Text style={styles.sectionTitle}>Document Properties</Text>
+              <View style={{ marginVertical: 10 }}>
+                <View style={styles.propertyRow}>
+                  <Text style={styles.propertyLabel}>Name:</Text>
+                  <Text style={styles.propertyValue}>{selectedDoc?.name}</Text>
+                </View>
+                <View style={styles.propertyRow}>
+                  <Text style={styles.propertyLabel}>Type:</Text>
+                  <Text style={styles.propertyValue}>{selectedDoc?.ext.toUpperCase()}</Text>
+                </View>
+                <View style={styles.propertyRow}>
+                  <Text style={styles.propertyLabel}>Size:</Text>
+                  <Text style={styles.propertyValue}>{selectedDoc?.size ? `${(selectedDoc.size / 1024).toFixed(2)} KB` : 'N/A'}</Text>
+                </View>
+                <View style={styles.propertyRow}>
+                  <Text style={styles.propertyLabel}>Uploaded:</Text>
+                  <Text style={styles.propertyValue}>{selectedDoc ? new Date(selectedDoc.uploadedAt).toLocaleString() : ''}</Text>
+                </View>
+                <View style={styles.propertyRow}>
+                  <Text style={styles.propertyLabel}>Source:</Text>
+                  <Text style={styles.propertyValue}>{selectedDoc?.source}</Text>
+                </View>
+                {selectedDoc?.isCloudSynced && (
+                  <View style={styles.propertyRow}>
+                    <Text style={styles.propertyLabel}>Cloud ID:</Text>
+                    <Text style={styles.propertyValue}>{selectedDoc?.appwriteFileId}</Text>
+                  </View>
+                )}
+              </View>
+              <TouchableOpacity onPress={() => setPropertiesVisible(false)} style={styles.closeMenuBtn}>
                 <Text style={{ color: "white", fontWeight: "700" }}>Close</Text>
               </TouchableOpacity>
             </TouchableOpacity>
@@ -421,7 +619,7 @@ const Home = () => {
           activeOpacity={1}
           onPress={() => setSeeMoreVisible(false)}
         >
-          <View style={[styles.modalContent, { minHeight: 400, maxHeight: height * 0.8 }]}>
+          <View style={[styles.modalContent, styles.modalShadow]}>
             <TouchableOpacity activeOpacity={1} onPress={() => {}}>
               <View style={[styles.searchBox, { marginBottom: 20 }]}>
                 <Image source={icons.search} style={styles.searchIcon} />
@@ -497,7 +695,6 @@ const Home = () => {
     </SafeAreaView>
   );
 };
-
 const uploadDocument = async (
   user: any,
   onError: (msg: string) => void,
@@ -510,17 +707,18 @@ const uploadDocument = async (
   try {
     const result = await DocumentPicker.getDocumentAsync({});
     if (result.canceled) return;
-    const { uri, name } = result.assets[0];
+    const { uri, name, size } = result.assets[0];
     const ext = name.split(".").pop()?.toLowerCase() || "";
     if (!ALLOWED_EXTS.includes(ext)) {
       onError("Unsupported file type.");
       return;
     }
-    const localDir = `${FileSystem.documentDirectory}documents/${user.id}/`;
-    await FileSystem.makeDirectoryAsync(localDir, { intermediates: true });
+    const localDir = `${LegacyFileSystem.documentDirectory}documents/${user.id}/`;
+    await LegacyFileSystem.makeDirectoryAsync(localDir, { intermediates: true });
     const fileId = Date.now().toString();
     const localUri = `${localDir}${fileId}.${ext}`;
-    await FileSystem.copyAsync({ from: uri, to: localUri });
+    await LegacyFileSystem.copyAsync({ from: uri, to: localUri });
+    // Content will be extracted server-side
     const newDoc = {
       fileId,
       userId: user.id,
@@ -530,6 +728,9 @@ const uploadDocument = async (
       source: "Device",
       uploadedAt: Date.now(),
       localUri,
+      content: "",
+      isCloudSynced: false,
+      size,
     } as DocItem;
     await addDocument(newDoc);
   } catch (e: any) {
@@ -537,9 +738,7 @@ const uploadDocument = async (
     onError("Failed to upload document.");
   }
 };
-
 export default Home;
-
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: "#f8fafc" },
   container: { paddingHorizontal: 20 },
@@ -669,6 +868,13 @@ const styles = StyleSheet.create({
     padding: 20,
     paddingBottom: 40,
   },
+  modalShadow: {
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
+  },
   modalHeader: {
     backgroundColor: "#fff",
     borderRadius: 12,
@@ -710,5 +916,17 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(0,0,0,0.5)",
     justifyContent: "center",
     alignItems: "center",
+  },
+  propertyRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 10,
+  },
+  propertyLabel: {
+    fontWeight: "600",
+    color: "#374151",
+  },
+  propertyValue: {
+    color: "#6B7280",
   },
 });

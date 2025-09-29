@@ -174,14 +174,18 @@ export default function GrokHistoryScreen() {
       <TouchableOpacity
         activeOpacity={0.8}
         className="flex-row items-center mt-2 py-1"
+         onPress={() => {
+            setIsLoading(true);
+            router.push("/(root)/(tabs)/home");
+          }}
       >
         <View
           className="w-12 h-12 items-center justify-center mr-3 bg-green-50"
           style={{ borderRadius: 24 }}
         >
-          <Feather name="clock" size={20} color="#16A34A" />
+          <Feather name="home" size={20} color="#16A34A" />
         </View>
-        <Text className="text-xl font-medium">Tasks</Text>
+        <Text className="text-xl font-medium">Back to Home</Text>
       </TouchableOpacity>
 
       {/* Conversations */}

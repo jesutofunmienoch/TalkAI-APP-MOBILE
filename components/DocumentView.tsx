@@ -198,7 +198,7 @@ const DocumentView = () => {
                   </View>
                 </View>
                 <View style={styles.fileMeta}>
-                  <Text style={styles.previewTitle} numberOfLines={2}>
+                  <Text style={styles.previewTitle} numberOfLines={1}>
                     {document.name}
                   </Text>
                   <Text style={styles.previewSub}>
@@ -210,14 +210,6 @@ const DocumentView = () => {
               <TouchableOpacity style={styles.menuItem} onPress={handleShare} activeOpacity={0.7}>
                 <MaterialIcons name="share" size={22} color="#111827" />
                 <Text style={styles.menuText}>Share</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.menuItem}
-                onPress={handleUploadToCloud}
-                activeOpacity={0.7}
-              >
-                <MaterialIcons name="cloud-upload" size={22} color="#111827" />
-                <Text style={styles.menuText}>Upload to Cloud</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.menuItem}
