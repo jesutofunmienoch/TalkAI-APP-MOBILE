@@ -18,8 +18,8 @@
       "supportsTablet": true,
       "infoPlist": {
         "NSCameraUsageDescription": "This app needs camera access for video calls",
-        "NSMicrophoneUsageDescription": "This app needs microphone access for voice calls",
-        "UIBackgroundModes": ["voip"]
+        "NSMicrophoneUsageDescription": "This app needs microphone access for voice calls and audio recording",
+        "UIBackgroundModes": ["audio", "voip"]
       },
       "bitcode": false
     },
@@ -52,6 +52,8 @@
     },
     "plugins": [
       "expo-dev-client",
+      "expo-av",
+      "expo-file-system",
       [
         "expo-router",
         {

@@ -1,93 +1,62 @@
 import React, { useState, useEffect, useRef } from "react";
-import { View, TouchableOpacity, StyleSheet, Animated, Easing, Alert } from "react-native";
+import {
+  View,
+  TouchableOpacity,
+  StyleSheet,
+  Animated,
+  Easing,
+  Alert,
+} from "react-native";
 import { MaterialIcons } from "@expo/vector-icons";
 import { Stack, router } from "expo-router";
 import LottieView from "lottie-react-native";
-import Vapi from "../../__mocks__/vapi-ai"; // Use mock for testing
+import { Audio, AVPlaybackStatus } from "expo-av";
+import * as FileSystem from "expo-file-system";
+import { Buffer } from "buffer";
 
-// Define Vapi interface with a distinct name
-interface IVapi {
-  start(assistantId: string, overrides?: any): void;
-  stop(): void;
-  setMuted(muted: boolean): void;
-  isMuted(): boolean;
-  on(
-    event: "speech-start" | "speech-end" | "error" | "volume-level",
-    callback: (...args: any[]) => void
-  ): void;
+// Ensure the API key is set in your environment variables
+const OPENAI_API_KEY = process.env.EXPO_PUBLIC_OPENAI_API_KEY;
+
+if (!OPENAI_API_KEY) {
+  console.error("OPENAI_API_KEY is not set in environment variables.");
 }
 
+// Define recording options with web support
+const recordingSettings: Audio.RecordingOptions = {
+  android: {
+    extension: ".m4a",
+    outputFormat: Audio.AndroidOutputFormat.MPEG_4,
+    audioEncoder: Audio.AndroidAudioEncoder.AAC,
+    sampleRate: 44100,
+    numberOfChannels: 2,
+    bitRate: 128000,
+  },
+  ios: {
+    extension: ".m4a",
+    audioQuality: Audio.IOSAudioQuality.HIGH,
+    sampleRate: 44100,
+    numberOfChannels: 2,
+    bitRate: 128000,
+    linearPCMBitDepth: 16,
+    linearPCMIsBigEndian: false,
+    linearPCMIsFloat: false,
+  },
+  web: {
+    mimeType: "audio/webm",
+    bitsPerSecond: 128000,
+  },
+};
+
 const AudioConversationScreen = () => {
-  const [isMicOn, setIsMicOn] = useState(true);
+  const [isMicOn, setIsMicOn] = useState(false);
   const [isAssistantSpeaking, setIsAssistantSpeaking] = useState(false);
-  const [isListening, setIsListening] = useState(false);
-
-  // Scale animation reference
+  const [recording, setRecording] = useState<Audio.Recording | null>(null);
   const scaleAnim = useRef(new Animated.Value(1)).current;
-  const vapiRef = useRef<IVapi | null>(null);
+  const soundRef = useRef<Audio.Sound | null>(null);
 
-  // Initialize VAPI
+  // Animate mic when listening/speaking
   useEffect(() => {
-    // Validate environment variables
-    if (!process.env.EXPO_PUBLIC_VAPI_PUBLIC_KEY || !process.env.EXPO_PUBLIC_VAPI_ASSISTANT_ID) {
-      Alert.alert("Configuration Error", "VAPI public key or assistant ID is missing in environment variables.");
-      return;
-    }
-
-    const vapi = new Vapi(process.env.EXPO_PUBLIC_VAPI_PUBLIC_KEY);
-    vapiRef.current = vapi;
-
-    // Start the assistant
-    vapi.start(process.env.EXPO_PUBLIC_VAPI_ASSISTANT_ID);
-
-    // Debug: Log all events to discover correct event names
-    vapi.on("error", (error: Error) => {
-      console.error("VAPI error:", error);
-      if (error.message.includes("permission")) {
-        Alert.alert("Permission Required", "Please grant microphone permissions in your device settings.");
-      }
-    });
-
-    // Handle assistant speaking state
-    vapi.on("speech-start", () => {
-      console.log("VAPI event: speech-start");
-      setIsAssistantSpeaking(true);
-    });
-
-    vapi.on("speech-end", () => {
-      console.log("VAPI event: speech-end");
-      setIsAssistantSpeaking(false);
-    });
-
-    // Handle user speech detection using volume-level
-    vapi.on("volume-level", (volume: number) => {
-      console.log("VAPI event: volume-level", volume);
-      setIsListening(volume > 0.1);
-    });
-
-    // Debug: Catch all events (type cast to bypass type check)
-    vapi.on("*" as any, (event: string, ...args: any[]) => {
-      console.log("VAPI event received:", event, args);
-    });
-
-    return () => {
-      vapi.stop();
-    };
-  }, []);
-
-  // Toggle microphone
-  const toggleMic = () => {
-    if (vapiRef.current) {
-      const newMutedState = !vapiRef.current.isMuted();
-      vapiRef.current.setMuted(newMutedState);
-      setIsMicOn(!newMutedState);
-      console.log("Microphone toggled:", newMutedState ? "muted" : "unmuted");
-    }
-  };
-
-  // Animation control
-  useEffect(() => {
-    if (isAssistantSpeaking || (isListening && isMicOn)) {
+    if (isMicOn || isAssistantSpeaking) {
       Animated.loop(
         Animated.sequence([
           Animated.timing(scaleAnim, {
@@ -112,7 +81,155 @@ const AudioConversationScreen = () => {
         useNativeDriver: true,
       }).start();
     }
-  }, [isAssistantSpeaking, isListening, isMicOn, scaleAnim]);
+  }, [isMicOn, isAssistantSpeaking, scaleAnim]);
+
+  // Cleanup sound on unmount
+  useEffect(() => {
+    return () => {
+      soundRef.current?.unloadAsync();
+    };
+  }, []);
+
+  // Start recording
+  const startRecording = async () => {
+    try {
+      const permission = await Audio.requestPermissionsAsync();
+      if (permission.status !== "granted") {
+        Alert.alert("Permission required", "Enable microphone access.");
+        return;
+      }
+
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+      });
+
+      const { recording } = await Audio.Recording.createAsync(recordingSettings);
+      setRecording(recording);
+      setIsMicOn(true);
+    } catch (err) {
+      console.error("Failed to start recording:", err);
+      Alert.alert("Error", "Failed to start recording.");
+    }
+  };
+
+  // Stop recording & process conversation
+  const stopRecording = async () => {
+    if (!recording) return;
+    setIsMicOn(false);
+    try {
+      await recording.stopAndUnloadAsync();
+      const uri = recording.getURI();
+      setRecording(null);
+
+      if (uri) {
+        await handleConversation(uri);
+      } else {
+        throw new Error("No URI returned from recording.");
+      }
+    } catch (err) {
+      console.error("Failed to stop recording:", err);
+      Alert.alert("Error", "Failed to stop recording.");
+    }
+  };
+
+  // Handle AI conversation: STT → GPT → TTS → Play
+  const handleConversation = async (audioUri: string) => {
+    try {
+      // 1. Transcribe with Whisper
+      const formData = new FormData();
+      formData.append("file", {
+        uri: audioUri,
+        type: "audio/m4a",
+        name: "speech.m4a",
+      } as any);
+      formData.append("model", "whisper-1");
+
+      const sttRes = await fetch(
+        "https://api.openai.com/v1/audio/transcriptions",
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${OPENAI_API_KEY}`,
+          },
+          body: formData,
+        }
+      );
+
+      if (!sttRes.ok) {
+        throw new Error(`Transcription failed: ${sttRes.statusText}`);
+      }
+
+      const sttData = await sttRes.json();
+      const userText = sttData.text;
+      console.log("User said:", userText);
+
+      // 2. Send to Chat model
+      const chatRes = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${OPENAI_API_KEY}`,
+        },
+        body: JSON.stringify({
+          model: "gpt-4o-mini",
+          messages: [{ role: "user", content: userText }],
+        }),
+      });
+
+      if (!chatRes.ok) {
+        throw new Error(`Chat completion failed: ${chatRes.statusText}`);
+      }
+
+      const chatData = await chatRes.json();
+      const reply = chatData.choices[0].message.content;
+      console.log("AI reply:", reply);
+
+      // 3. Convert reply to speech
+      setIsAssistantSpeaking(true);
+      const ttsRes = await fetch("https://api.openai.com/v1/audio/speech", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${OPENAI_API_KEY}`,
+        },
+        body: JSON.stringify({
+          model: "tts-1",
+          voice: "alloy",
+          input: reply,
+        }),
+      });
+
+      if (!ttsRes.ok) {
+        throw new Error(`TTS failed: ${ttsRes.statusText}`);
+      }
+
+      const ttsBuffer = await ttsRes.arrayBuffer();
+      const base64Data = Buffer.from(ttsBuffer).toString("base64");
+      // Use documentDirectory as a fallback if cacheDirectory is not recognized
+      const ttsUri = `${(FileSystem as any).cacheDirectory || FileSystem.documentDirectory}reply.mp3`;
+
+      await (FileSystem as any).writeAsStringAsync(ttsUri, base64Data, {
+        encoding: (FileSystem as any).Encoding?.Base64 || "base64",
+      });
+
+      // 4. Play reply
+      const { sound } = await Audio.Sound.createAsync({ uri: ttsUri });
+      soundRef.current = sound;
+      await sound.playAsync();
+      sound.setOnPlaybackStatusUpdate((status: AVPlaybackStatus) => {
+        if (!status.isLoaded) return;
+        if (status.didJustFinish) {
+          setIsAssistantSpeaking(false);
+          sound.unloadAsync();
+        }
+      });
+    } catch (err) {
+      console.error("Conversation error:", err);
+      Alert.alert("Error", "Failed to process conversation.");
+      setIsAssistantSpeaking(false);
+    }
+  };
 
   return (
     <View style={styles.container}>
@@ -130,30 +247,25 @@ const AudioConversationScreen = () => {
         </Animated.View>
       </View>
 
-      {/* Bottom Control Icons */}
+      {/* Controls */}
       <View style={styles.controls}>
-        {/* Mic Toggle */}
+        {/* Mic */}
         <TouchableOpacity
-          style={[styles.iconButton, !isMicOn && styles.mutedButton]}
-          onPress={toggleMic}
+          style={[styles.iconButton, isMicOn && styles.activeButton]}
+          onPress={isMicOn ? stopRecording : startRecording}
         >
           <MaterialIcons
-            name={isMicOn ? "mic" : "mic-off"}
+            name={isMicOn ? "mic" : "mic-none"}
             size={28}
-            color={isMicOn ? "#111" : "#fff"}
+            color={isMicOn ? "#fff" : "#111"}
           />
-        </TouchableOpacity>
-
-        {/* Camera (placeholder, not implemented) */}
-        <TouchableOpacity style={styles.iconButton}>
-          <MaterialIcons name="videocam" size={28} color="#111" />
         </TouchableOpacity>
 
         {/* Cancel */}
         <TouchableOpacity
           style={styles.iconButton}
-          onPress={() => {
-            vapiRef.current?.stop();
+          onPress={async () => {
+            await soundRef.current?.stopAsync();
             router.back();
           }}
         >
@@ -171,15 +283,8 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-  animationContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  animation: {
-    width: 250,
-    height: 250,
-  },
+  animationContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
+  animation: { width: 250, height: 250 },
   controls: {
     flexDirection: "row",
     justifyContent: "space-around",
@@ -195,9 +300,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-  mutedButton: {
-    backgroundColor: "#d32f2f",
-  },
+  activeButton: { backgroundColor: "#2196f3" },
 });
 
 export default AudioConversationScreen;

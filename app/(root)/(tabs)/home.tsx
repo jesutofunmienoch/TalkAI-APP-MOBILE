@@ -53,7 +53,7 @@ const Home = () => {
   const headerLottie = require("@/assets/images/others.json");
   const noDataLottie = require("@/assets/images/No-Data.json");
   const cloudAnimation = require("@/assets/images/cloud.json");
-  const checkIcon = require("@/assets/images/check.png");
+  const checkIcon = require("@/assets/images/green.png");
   // Initialize Appwrite client once
   const client = useRef<Client | null>(null);
   useEffect(() => {

@@ -81,6 +81,7 @@ export default function AskAI() {
   const storageKey = `askai_${docId}`;
 
   const loadConversation = useCallback(async () => {
+    console.log("Loading conversation for docId:", docId);
     const stored = await AsyncStorage.getItem(storageKey);
     if (stored) {
       const parsed = JSON.parse(stored);
@@ -212,6 +213,7 @@ export default function AskAI() {
     const trimmed = inputText.trim();
     if (!trimmed && !editingMessageId) return;
 
+    console.log("Sending message:", trimmed);
     Keyboard.dismiss();
     setShowAnimation(false);
 
@@ -288,7 +290,7 @@ export default function AskAI() {
             }
           }
         }, 40);
-      } catch (error) {
+      } catch (error: any) {
         console.error("OpenAI API error:", error);
         setMessages((prev) =>
           prev.map((m) =>
@@ -383,7 +385,7 @@ export default function AskAI() {
           }
         }
       }, 40);
-    } catch (error) {
+    } catch (error: any) {
       console.error("OpenAI API error:", error);
       setMessages((prev) =>
         prev.map((m) =>
@@ -420,7 +422,7 @@ export default function AskAI() {
   const handleShare = async (text: string) => {
     try {
       await Share.share({ message: text });
-    } catch (err) {
+    } catch (err: any) {
       console.warn("Share failed", err);
     }
   };
@@ -581,7 +583,7 @@ export default function AskAI() {
                   >
                     <AntDesign name="share-alt" size={18} color="#374151" />
                     <Text style={styles.aiActionLabel}>Share</Text>
-                  </TouchableOpacity>
+                    </TouchableOpacity>
                 </View>
               )}
             </View>
@@ -732,7 +734,7 @@ export default function AskAI() {
                   )}
                   <TouchableOpacity
                     style={[styles.iconBtn, { marginLeft: 8 }]}
-                    onPress={() => router.push("/documentaudioconversation")}
+                    onPress={() => router.push({ pathname: "/documentaudioconversation", params: { startRecording: "true", docId } })}
                   >
                     <MaterialIcons name="auto-awesome" size={18} color="#2563eb" />
                   </TouchableOpacity>
